@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
@@ -7,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Play, Pause, RotateCcw, Shuffle as ShuffleIcon, Search as SearchIcon, Share2 as GraphIcon, Target, Trash2 } from "lucide-react"; // Added Trash2
+import { Play, Pause, RotateCcw, Shuffle as ShuffleIcon, Search as SearchIcon, Share2 as GraphIcon, Target, Trash2, CircleDot, Waypoints, LocateFixed } from "lucide-react"; // Added editor mode icons
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
@@ -15,6 +14,7 @@ import { cn } from "@/lib/utils";
 import type { AlgorithmStep, ArrayAlgorithmStep, GraphAlgorithmStep, Graph, Node, Edge } from '@/lib/types';
 import { isGraphStep, isArrayStep } from '@/lib/types';
 import GraphEditor from './graph-editor';
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group" // Import ToggleGroup
 
 // Array Algorithm Implementations
 import { getBubbleSortSteps } from "@/lib/algorithms/sorting/bubbleSort";
@@ -73,6 +73,9 @@ const ALGORITHM_MAP: Record<string, Record<string, Function>> = {
         'kruskals-algorithm': getKruskalsSteps,
     },
 };
+
+export type GraphEditorMode = 'node' | 'edge' | 'set-source';
+
 
 // Helper to generate a random graph, ensuring connectivity
 const generateRandomGraph = (numNodes = 7, edgeDensity = 0.35): Graph => {
@@ -181,10 +184,10 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
   const [targetValue, setTargetValue] = useState<string>(""); // For search
 
   // State for Graph Algorithms
-  // Separate state for the editor and the graph being visualized
   const [editorGraph, setEditorGraph] = useState<Graph>({ nodes: [], edges: [] }); // Editor starts empty
   const [visualizerGraph, setVisualizerGraph] = useState<Graph>(generateRandomGraph()); // Visualizer starts with random graph
   const [startNode, setStartNode] = useState<number | null>(null);
+  const [editorMode, setEditorMode] = useState<GraphEditorMode>('node'); // State for editor mode
 
   // Common State
   const [steps, setSteps] = useState<AlgorithmStep[]>([]);
@@ -221,7 +224,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
         setEditorGraph({ nodes: [], edges: [] });
         setStartNode(null);
         resetVisualization({ nodes: [], edges: [] }); // Reset visualization with empty graph
-        setIsUsingEditorGraph(false); // Reset graph source flag (or set true if intended)
+        setIsUsingEditorGraph(true); // Assume user wants to visualize the (now empty) workspace
         toast({ title: "Workspace Cleared", description: "Graph editor has been reset." });
     }, [toast]); // Added toast dependency
 
@@ -230,16 +233,22 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
      resetVisualization(); // Reset visualization state first
     if (category === 'sort' || category === 'search') {
       generateRandomArray();
+      setEditorMode('node'); // Reset editor mode if switching away from graph
     } else if (category === 'graph') {
        // Keep editor empty, initialize visualizer with random
        setEditorGraph({ nodes: [], edges: [] });
        initializeRandomGraphForVisualizer();
+       setEditorMode('node'); // Default to node mode
+       // Reset start node mode availability based on algorithm
+        if (algorithmId !== 'prims-algorithm' && editorMode === 'set-source') {
+            setEditorMode('node');
+        }
     }
     return () => {
       if (timeoutId.current) clearTimeout(timeoutId.current);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [algorithmId, category]); // Added initializeRandomGraphForVisualizer
+  }, [algorithmId, category]); // Removed initializeRandomGraphForVisualizer, generateRandomArray, editorMode as they cause re-runs
 
    // Update default start node based on the CURRENTLY ACTIVE graph for visualization
    useEffect(() => {
@@ -254,6 +263,15 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
            setStartNode(null);
        }
    }, [editorGraph, visualizerGraph, isUsingEditorGraph, category, startNode]);
+
+   // Effect to switch back to node mode if 'Set Source' is selected but not applicable (Kruskal's)
+    useEffect(() => {
+        if (category === 'graph' && algorithmId === 'kruskals-algorithm' && editorMode === 'set-source') {
+            setEditorMode('node');
+            toast({ title: "Mode Changed", description: "'Set Source Node' mode is only available for Prim's algorithm.", variant: "default" });
+        }
+    }, [algorithmId, category, editorMode, toast]);
+
 
   // --- Input Parsing ---
 
@@ -330,6 +348,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
         }
     };
 
+   // Handles manual start node selection VIA THE SELECT DROPDOWN
    const handleStartNodeChange = (value: string) => {
        const activeGraph = isUsingEditorGraph ? editorGraph : visualizerGraph;
        const nodeId = parseInt(value, 10);
@@ -338,6 +357,36 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
            resetVisualization(); // Reset if start node changes, steps depend on it
        }
    };
+
+    // Handles start node selection VIA THE GRAPH EDITOR (Set Source Mode)
+   const handleSetStartNodeFromEditor = useCallback((nodeId: number) => {
+       if (algorithmId !== 'prims-algorithm') {
+           toast({ title: "Action Unavailable", description: "Setting a source node directly is only needed for Prim's algorithm.", variant: "default" });
+           return; // Only allow for Prim's
+       }
+       const activeGraph = isUsingEditorGraph ? editorGraph : visualizerGraph;
+       if (activeGraph.nodes.some(n => n.id === nodeId)) {
+           setStartNode(nodeId);
+           resetVisualization(); // Reset visualization as steps depend on start node
+           toast({ title: "Start Node Set", description: `Node ${nodeId} selected as the start node for Prim's algorithm.` });
+           // Optional: Switch back to node mode after setting the source
+           setEditorMode('node');
+       } else {
+           toast({ title: "Invalid Node", description: `Node ${nodeId} does not exist in the current graph.`, variant: "destructive" });
+       }
+   }, [algorithmId, isUsingEditorGraph, editorGraph, visualizerGraph, resetVisualization, toast]); // Dependencies
+
+
+    const handleEditorModeChange = (value: GraphEditorMode | null) => {
+        if (value) {
+             // Prevent switching to 'set-source' if not Prim's
+             if (value === 'set-source' && algorithmId !== 'prims-algorithm') {
+                 toast({ title: "Mode Unavailable", description: "'Set Source Node' mode is only for Prim's algorithm.", variant: "default" });
+                 return; // Stay in the current mode
+             }
+            setEditorMode(value);
+        }
+    };
 
   // --- Visualization Logic ---
 
@@ -784,6 +833,15 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
   const isGraphCategory = category === 'graph';
   const activeGraph = isUsingEditorGraph ? editorGraph : visualizerGraph; // Determine active graph for display logic
 
+  const getWorkspaceDescription = () => {
+        switch (editorMode) {
+            case 'node': return "Click to add nodes. Drag nodes to move.";
+            case 'edge': return "Drag between nodes to add edges. Click edges to edit/delete.";
+            case 'set-source': return "Click on a node to set it as the source (for Prim's).";
+            default: return "Graph Workspace";
+        }
+    };
+
 
   return (
     <div className="flex flex-col lg:flex-row gap-6">
@@ -822,15 +880,17 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
 
                  {algorithmId === 'prims-algorithm' && (
-                   <div className="space-y-2">
-                     <Label htmlFor="start-node-select">Start Node (Prim's)</Label>
+                    <>
+                    <Separator />
+                     <Label>Start Node (Prim's)</Label>
+                     <div className="flex gap-2">
                      <Select
                         value={startNode !== null ? startNode.toString() : ""}
                         onValueChange={handleStartNodeChange}
                         disabled={activeGraph.nodes.length === 0} // Disable based on *active* graph
                      >
-                       <SelectTrigger id="start-node-select" className="w-full">
-                         <SelectValue placeholder="Select start node..." />
+                       <SelectTrigger id="start-node-select" className="flex-grow">
+                         <SelectValue placeholder="Select node..." />
                        </SelectTrigger>
                        <SelectContent>
                            {activeGraph.nodes.length > 0 ? (
@@ -845,7 +905,21 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                            }
                        </SelectContent>
                      </Select>
-                   </div>
+                     {/* Optionally, add a button to enter 'set-source' mode quickly */}
+                      {/* <Button
+                         variant="outline"
+                         size="icon"
+                         onClick={() => handleEditorModeChange('set-source')}
+                         disabled={editorMode === 'set-source'}
+                         aria-label="Set Start Node via Click"
+                         title="Set Start Node via Click"
+                       >
+                         <LocateFixed className="h-4 w-4" />
+                       </Button> */}
+                     </div>
+
+                     </>
+
                  )}
                   <Separator />
                    <p className="text-sm text-muted-foreground">
@@ -933,15 +1007,33 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
         {/* Conditional Rendering for Graph Workspace */}
         {isGraphCategory && (
              <Card>
-                 <CardHeader className="flex flex-row items-center justify-between">
-                     <div>
+                 <CardHeader className="flex flex-row items-center justify-between gap-4">
+                     <div className="flex-grow">
                         <CardTitle>Graph Workspace</CardTitle>
-                        <CardDescription>
-                            Click to add nodes. Shift+Drag between nodes to add edges. Click edges to edit/delete.
-                        </CardDescription>
+                         <CardDescription>
+                            {getWorkspaceDescription()}
+                         </CardDescription>
                      </div>
-                     <Button onClick={clearGraphWorkspace} variant="destructive" size="sm">
-                         <Trash2 className="mr-2 h-4 w-4" /> Clear Workspace
+                      {/* Editor Mode Toggle */}
+                     <ToggleGroup type="single" value={editorMode} onValueChange={handleEditorModeChange} size="sm" aria-label="Graph Editor Mode">
+                         <ToggleGroupItem value="node" aria-label="Node Mode" title="Node Mode (Add/Move)">
+                           <CircleDot className="h-4 w-4" />
+                         </ToggleGroupItem>
+                         <ToggleGroupItem value="edge" aria-label="Edge Mode" title="Edge Mode (Add/Edit)">
+                           <Waypoints className="h-4 w-4" />
+                         </ToggleGroupItem>
+                         <ToggleGroupItem
+                            value="set-source"
+                            aria-label="Set Source Node Mode"
+                            title="Set Source Node (Prim's)"
+                            disabled={algorithmId !== 'prims-algorithm'}
+                            >
+                           <LocateFixed className="h-4 w-4" />
+                         </ToggleGroupItem>
+                     </ToggleGroup>
+                     {/* Clear Button */}
+                     <Button onClick={clearGraphWorkspace} variant="destructive" size="sm" className="flex-shrink-0">
+                         <Trash2 className="mr-2 h-4 w-4" /> Clear
                      </Button>
                  </CardHeader>
                  <CardContent className="aspect-[2/1] p-0 overflow-hidden relative border rounded-b-lg">
@@ -952,6 +1044,8 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                          width={GRAPH_CANVAS_WIDTH}
                          height={GRAPH_CANVAS_HEIGHT}
                          readOnly={isPlaying} // Make editor read-only during visualization playback
+                         mode={editorMode} // Pass current mode
+                         onSetStartNode={handleSetStartNodeFromEditor} // Pass handler
                      />
                  </CardContent>
              </Card>
