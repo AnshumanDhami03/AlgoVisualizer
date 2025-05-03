@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
@@ -199,316 +200,10 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
   const timeoutId = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
 
-  // --- Initialization and Reset ---
-
-  const generateRandomArray = useCallback((size: number = DEFAULT_ARRAY_SIZE) => {
-    const newArray = Array.from({ length: size }, () => Math.floor(Math.random() * 100) + 1);
-    setArray(newArray);
-    setInputValue(newArray.join(", "));
-    resetVisualization();
-    setIsUsingEditorGraph(false); // Reset graph source flag
-  }, []);
-
-   // Generates a new random graph ONLY for the visualizer
-   const initializeRandomGraphForVisualizer = useCallback(() => {
-        const randomGraph = generateRandomGraph();
-        setVisualizerGraph(randomGraph);
-        // Automatically select the first node as the default start node if available
-        setStartNode(randomGraph.nodes.length > 0 ? randomGraph.nodes[0].id : null);
-        resetVisualization(randomGraph); // Pass the new graph to reset
-        setIsUsingEditorGraph(false); // Indicate we are using the random graph
-    }, []);
-
-    // Clears the graph editor workspace
-   const clearGraphWorkspace = useCallback(() => {
-        setEditorGraph({ nodes: [], edges: [] });
-        setStartNode(null);
-        resetVisualization({ nodes: [], edges: [] }); // Reset visualization with empty graph
-        setIsUsingEditorGraph(true); // Assume user wants to visualize the (now empty) workspace
-        toast({ title: "Workspace Cleared", description: "Graph editor has been reset." });
-    }, [toast]); // Added toast dependency
-
-  // Initialize based on category when component mounts or category/algorithm changes
-  useEffect(() => {
-     resetVisualization(); // Reset visualization state first
-    if (category === 'sort' || category === 'search') {
-      generateRandomArray();
-      setEditorMode('node'); // Reset editor mode if switching away from graph
-    } else if (category === 'graph') {
-       // Keep editor empty, initialize visualizer with random
-       setEditorGraph({ nodes: [], edges: [] });
-       initializeRandomGraphForVisualizer();
-       setEditorMode('node'); // Default to node mode
-       // Reset start node mode availability based on algorithm
-        if (algorithmId !== 'prims-algorithm' && editorMode === 'set-source') {
-            setEditorMode('node');
-        }
-    }
-    return () => {
-      if (timeoutId.current) clearTimeout(timeoutId.current);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [algorithmId, category]); // Removed initializeRandomGraphForVisualizer, generateRandomArray, editorMode as they cause re-runs
-
-   // Update default start node based on the CURRENTLY ACTIVE graph for visualization
-   useEffect(() => {
-       const activeGraph = isUsingEditorGraph ? editorGraph : visualizerGraph;
-       if (category === 'graph' && activeGraph.nodes.length > 0 && startNode === null) {
-           setStartNode(activeGraph.nodes[0].id);
-       }
-        if (category === 'graph' && activeGraph.nodes.length > 0 && startNode !== null && !activeGraph.nodes.some(n => n.id === startNode)) {
-             setStartNode(activeGraph.nodes[0].id);
-         }
-       if (category === 'graph' && activeGraph.nodes.length === 0) {
-           setStartNode(null);
-       }
-   }, [editorGraph, visualizerGraph, isUsingEditorGraph, category, startNode]);
-
-   // Effect to switch back to node mode if 'Set Source' is selected but not applicable (Kruskal's)
-    useEffect(() => {
-        if (category === 'graph' && algorithmId === 'kruskals-algorithm' && editorMode === 'set-source') {
-            setEditorMode('node');
-            toast({ title: "Mode Changed", description: "'Set Source Node' mode is only available for Prim's algorithm.", variant: "default" });
-        }
-    }, [algorithmId, category, editorMode, toast]);
-
-
-  // --- Input Parsing ---
-
-  const parseArrayInput = (input: string): number[] | null => {
-    try {
-      const parsedArray = input
-        .split(",")
-        .map((s) => s.trim())
-        .filter(s => s !== '')
-        .map((s) => {
-          const num = parseInt(s, 10);
-          if (isNaN(num)) throw new Error(`Invalid number: "${s}"`);
-          if (num < 1 || num > 100) throw new Error(`Number out of range (1-100): ${num}`);
-          return num;
-        });
-      if (parsedArray.length < MIN_ARRAY_SIZE || parsedArray.length > MAX_ARRAY_SIZE) {
-        throw new Error(`Array size must be between ${MIN_ARRAY_SIZE} and ${MAX_ARRAY_SIZE}.`);
-      }
-      return parsedArray;
-    } catch (error: any) {
-      toast({ title: "Invalid Input", description: error.message, variant: "destructive" });
-      return null;
-    }
-  };
-
-  const parseTargetInput = (input: string): number | null => {
-    try {
-      const num = parseInt(input, 10);
-      if (isNaN(num)) throw new Error(`Invalid target number: "${input}"`);
-      if (num < 1 || num > 100) throw new Error(`Target must be between 1 and 100.`);
-      return num;
-    } catch (error: any) {
-      toast({ title: "Invalid Target", description: error.message, variant: "destructive" });
-      return null;
-    }
-  };
-
-  // --- Input Handling ---
-
-  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-      setInputValue(event.target.value);
-  };
-
-  const handleTargetChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setTargetValue(event.target.value);
-  };
-
-  // This updates the EDITOR's graph state
-  const handleEditorGraphChange = (newGraph: Graph) => {
-      setEditorGraph(newGraph);
-      // Reset visualization steps whenever editor graph changes
-      resetVisualization();
-      // If user starts editing, assume they want to visualize this graph
-      setIsUsingEditorGraph(true);
-      // Ensure start node is valid for the EDITOR graph
-        if (startNode !== null && !newGraph.nodes.some(n => n.id === startNode)) {
-            setStartNode(newGraph.nodes.length > 0 ? newGraph.nodes[0].id : null);
-        } else if (newGraph.nodes.length > 0 && startNode === null) {
-            setStartNode(newGraph.nodes[0].id);
-        }
-  };
-
-
-  const handleSetArrayData = () => {
-        resetVisualization();
-        const parsedArray = parseArrayInput(inputValue);
-        if (parsedArray) {
-            if (algorithmId === 'binary-search' && category === 'search') {
-                parsedArray.sort((a, b) => a - b);
-                setInputValue(parsedArray.join(", "));
-                toast({ title: "Array Sorted", description: "Binary Search requires a sorted array." });
-            }
-            setArray(parsedArray);
-        }
-    };
-
-   // Handles manual start node selection VIA THE SELECT DROPDOWN
-   const handleStartNodeChange = (value: string) => {
-       const activeGraph = isUsingEditorGraph ? editorGraph : visualizerGraph;
-       const nodeId = parseInt(value, 10);
-       if (!isNaN(nodeId) && activeGraph.nodes.some(n => n.id === nodeId)) {
-           setStartNode(nodeId);
-           resetVisualization(); // Reset if start node changes, steps depend on it
-       }
-   };
-
-    // Handles start node selection VIA THE GRAPH EDITOR (Set Source Mode)
-   const handleSetStartNodeFromEditor = useCallback((nodeId: number) => {
-       if (algorithmId !== 'prims-algorithm') {
-           toast({ title: "Action Unavailable", description: "Setting a source node directly is only needed for Prim's algorithm.", variant: "default" });
-           return; // Only allow for Prim's
-       }
-       const activeGraph = isUsingEditorGraph ? editorGraph : visualizerGraph;
-       if (activeGraph.nodes.some(n => n.id === nodeId)) {
-           setStartNode(nodeId);
-           resetVisualization(); // Reset visualization as steps depend on start node
-           toast({ title: "Start Node Set", description: `Node ${nodeId} selected as the start node for Prim's algorithm.` });
-           // Optional: Switch back to node mode after setting the source
-           setEditorMode('node');
-       } else {
-           toast({ title: "Invalid Node", description: `Node ${nodeId} does not exist in the current graph.`, variant: "destructive" });
-       }
-   }, [algorithmId, isUsingEditorGraph, editorGraph, visualizerGraph, resetVisualization, toast]); // Dependencies
-
-
-    const handleEditorModeChange = (value: GraphEditorMode | null) => {
-        if (value) {
-             // Prevent switching to 'set-source' if not Prim's
-             if (value === 'set-source' && algorithmId !== 'prims-algorithm') {
-                 toast({ title: "Mode Unavailable", description: "'Set Source Node' mode is only for Prim's algorithm.", variant: "default" });
-                 return; // Stay in the current mode
-             }
-            setEditorMode(value);
-        }
-    };
-
-  // --- Visualization Logic ---
-
-   // Modified resetVisualization to accept an optional graph to draw initially
-  const resetVisualization = useCallback((graphToDraw?: Graph) => {
-    setIsPlaying(false);
-    setSteps([]);
-    setCurrentStepIndex(0);
-    if (timeoutId.current) clearTimeout(timeoutId.current);
-    timeoutId.current = null;
-
-    const activeGraph = graphToDraw ?? (isUsingEditorGraph ? editorGraph : visualizerGraph);
-
-    requestAnimationFrame(() => {
-        if (category === 'graph' && activeGraph) { // Add check for activeGraph existence
-            let persistentStartId: number | undefined = undefined;
-            if (algorithmId === 'prims-algorithm') {
-                 persistentStartId = startNode ?? undefined;
-            }
-           drawGraphVisualization(activeGraph, [], [], [], undefined, persistentStartId);
-        } else if (category === 'sort' || category === 'search'){ // Only draw array if relevant category
-           drawArray(array);
-        }
-      });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category, array, editorGraph, visualizerGraph, isUsingEditorGraph, startNode, algorithmId]); // Added drawArray to deps
-
-
- const startVisualization = () => {
-    const algorithmFunction = ALGORITHM_MAP[category]?.[algorithmId];
-    if (!algorithmFunction) {
-        toast({ title: "Error", description: "Algorithm not found.", variant: "destructive" });
-        return;
-    }
-
-    // Determine which graph to use for visualization
-    const graphToVisualize = isUsingEditorGraph ? editorGraph : visualizerGraph;
-
-    // Reset visualization using the chosen graph
-    resetVisualization(graphToVisualize);
-
-    let newSteps: AlgorithmStep[] = [];
-
-    try {
-        if (category === 'sort') {
-            if (array.length === 0) throw new Error("Please provide an array.");
-            newSteps = algorithmFunction([...array]);
-        } else if (category === 'search') {
-            if (array.length === 0) throw new Error("Please provide an array.");
-            const targetNum = parseTargetInput(targetValue);
-            if (targetNum === null) return;
-
-            let currentArray = [...array];
-            if (algorithmId === 'binary-search') {
-                const isSorted = currentArray.every((val, i, arr) => !i || val >= arr[i - 1]);
-                 if(!isSorted){
-                    currentArray.sort((a, b) => a - b);
-                    toast({ title: "Array Sorted", description: "Input array sorted for Binary Search." });
-                    setArray(currentArray);
-                    setInputValue(currentArray.join(", "));
-                 }
-            }
-            newSteps = algorithmFunction(currentArray, targetNum);
-        } else if (category === 'graph') {
-            // Use the determined graph (editor or random)
-            if (!graphToVisualize || graphToVisualize.nodes.length === 0) throw new Error("Please provide or generate a valid graph.");
-
-            let currentStartNode = startNode; // Use the state's start node
-
-            // Validate or select default start node for the *graph being visualized*
-             if (currentStartNode === null || !graphToVisualize.nodes.some(n => n.id === currentStartNode)) {
-                currentStartNode = graphToVisualize.nodes[0]?.id ?? null;
-                 if (currentStartNode === null) {
-                     throw new Error("Graph has no nodes to select a start node from.");
-                 }
-                 setStartNode(currentStartNode); // Update state if default was chosen
-                  toast({title: "Start Node Selected", description: `Using node ${currentStartNode} as start node.`});
-             }
-
-
-            if (algorithmId === 'prims-algorithm') {
-                 if (currentStartNode === null) { // Double check after potential default selection
-                    throw new Error("Cannot run Prim's without a valid start node.");
-                 }
-                newSteps = algorithmFunction(graphToVisualize, currentStartNode);
-            } else { // Kruskal's
-                 newSteps = algorithmFunction(graphToVisualize);
-            }
-
-        }
-
-        if (newSteps.length > 0) {
-            setSteps(newSteps);
-            setCurrentStepIndex(0);
-            setIsPlaying(true);
-             requestAnimationFrame(() => {
-                const firstStep = newSteps[0];
-                 if (firstStep) { // Ensure firstStep exists
-                    if (isGraphStep(firstStep)) {
-                        // Use startNodeId from the first step or the selected startNode
-                        const firstStepStartNodeId = firstStep.startNodeId ?? startNode ?? undefined;
-                        drawGraphVisualization(firstStep.graph, firstStep.mstEdges, firstStep.highlightedNodes, firstStep.highlightedEdges, firstStep.candidateEdge, firstStepStartNodeId);
-                    } else if (isArrayStep(firstStep)) {
-                        drawArray(firstStep.array, firstStep.highlight, firstStep.pivot, firstStep.sortedIndices, firstStep.target, firstStep.foundIndex);
-                    }
-                 }
-             });
-
-        } else {
-             toast({ title: "No Steps", description: "Algorithm generated 0 steps. Check input or algorithm.", variant: "default"});
-             resetVisualization(graphToVisualize); // Draw initial state of the chosen graph
-        }
-    } catch (error: any) {
-        toast({ title: "Visualization Error", description: error.message || "Could not start visualization.", variant: "destructive" });
-         resetVisualization(graphToVisualize); // Reset on error, showing the graph that caused it
-    }
-};
-
 
   // --- Drawing Functions ---
 
-  const drawArray = useCallback((
+    const drawArray = useCallback((
         currentArrayState: number[],
         highlight: number[] = [],
         pivot?: number,
@@ -563,7 +258,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
   }, [category]);
 
 
-  const drawGraphVisualization = useCallback((
+    const drawGraphVisualization = useCallback((
         graphData: Graph,
         mstEdges: Edge[] = [],
         highlightedNodes: number[] = [],
@@ -699,7 +394,317 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
             ctx.fillText(node.id.toString(), node.x, node.y);
         });
 
-    }, []);
+    }, []); // Removed category, no longer directly used
+
+ // Modified resetVisualization to accept an optional graph to draw initially
+ // Define resetVisualization using useCallback BEFORE it's used as a dependency
+  const resetVisualization = useCallback((graphToDraw?: Graph) => {
+    setIsPlaying(false);
+    setSteps([]);
+    setCurrentStepIndex(0);
+    if (timeoutId.current) clearTimeout(timeoutId.current);
+    timeoutId.current = null;
+
+    const activeGraph = graphToDraw ?? (isUsingEditorGraph ? editorGraph : visualizerGraph);
+
+    requestAnimationFrame(() => {
+        if (category === 'graph' && activeGraph) { // Add check for activeGraph existence
+            let persistentStartId: number | undefined = undefined;
+            if (algorithmId === 'prims-algorithm') {
+                 persistentStartId = startNode ?? undefined;
+            }
+           drawGraphVisualization(activeGraph, [], [], [], undefined, persistentStartId);
+        } else if (category === 'sort' || category === 'search'){ // Only draw array if relevant category
+           drawArray(array);
+        }
+      });
+  }, [category, array, editorGraph, visualizerGraph, isUsingEditorGraph, startNode, algorithmId, drawArray, drawGraphVisualization]); // Include drawArray/Graph dependencies
+
+  // --- Initialization and Reset ---
+
+  const generateRandomArray = useCallback((size: number = DEFAULT_ARRAY_SIZE) => {
+    const newArray = Array.from({ length: size }, () => Math.floor(Math.random() * 100) + 1);
+    setArray(newArray);
+    setInputValue(newArray.join(", "));
+    resetVisualization();
+    setIsUsingEditorGraph(false); // Reset graph source flag
+  }, [resetVisualization]);
+
+   // Generates a new random graph ONLY for the visualizer
+   const initializeRandomGraphForVisualizer = useCallback(() => {
+        const randomGraph = generateRandomGraph();
+        setVisualizerGraph(randomGraph);
+        // Automatically select the first node as the default start node if available
+        setStartNode(randomGraph.nodes.length > 0 ? randomGraph.nodes[0].id : null);
+        resetVisualization(randomGraph); // Pass the new graph to reset
+        setIsUsingEditorGraph(false); // Indicate we are using the random graph
+    }, [resetVisualization]);
+
+    // Clears the graph editor workspace
+   const clearGraphWorkspace = useCallback(() => {
+        setEditorGraph({ nodes: [], edges: [] });
+        setStartNode(null);
+        resetVisualization({ nodes: [], edges: [] }); // Reset visualization with empty graph
+        setIsUsingEditorGraph(true); // Assume user wants to visualize the (now empty) workspace
+        toast({ title: "Workspace Cleared", description: "Graph editor has been reset." });
+    }, [resetVisualization, toast]); // Added toast dependency
+
+  // Initialize based on category when component mounts or category/algorithm changes
+  useEffect(() => {
+     resetVisualization(); // Reset visualization state first
+    if (category === 'sort' || category === 'search') {
+      generateRandomArray();
+      setEditorMode('node'); // Reset editor mode if switching away from graph
+    } else if (category === 'graph') {
+       // Keep editor empty, initialize visualizer with random
+       setEditorGraph({ nodes: [], edges: [] });
+       initializeRandomGraphForVisualizer();
+       setEditorMode('node'); // Default to node mode
+       // Reset start node mode availability based on algorithm
+        if (algorithmId !== 'prims-algorithm' && editorMode === 'set-source') {
+            setEditorMode('node');
+        }
+    }
+    return () => {
+      if (timeoutId.current) clearTimeout(timeoutId.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [algorithmId, category]); // Removed initializeRandomGraphForVisualizer, generateRandomArray, editorMode as they cause re-runs
+
+   // Update default start node based on the CURRENTLY ACTIVE graph for visualization
+   useEffect(() => {
+       const activeGraph = isUsingEditorGraph ? editorGraph : visualizerGraph;
+       if (category === 'graph' && activeGraph.nodes.length > 0 && startNode === null) {
+           setStartNode(activeGraph.nodes[0].id);
+       }
+        if (category === 'graph' && activeGraph.nodes.length > 0 && startNode !== null && !activeGraph.nodes.some(n => n.id === startNode)) {
+             setStartNode(activeGraph.nodes[0].id);
+         }
+       if (category === 'graph' && activeGraph.nodes.length === 0) {
+           setStartNode(null);
+       }
+   }, [editorGraph, visualizerGraph, isUsingEditorGraph, category, startNode]);
+
+   // Effect to switch back to node mode if 'Set Source' is selected but not applicable (Kruskal's)
+    useEffect(() => {
+        if (category === 'graph' && algorithmId === 'kruskals-algorithm' && editorMode === 'set-source') {
+            setEditorMode('node');
+            toast({ title: "Mode Changed", description: "'Set Source Node' mode is only available for Prim's algorithm.", variant: "default" });
+        }
+    }, [algorithmId, category, editorMode, toast]);
+
+
+  // --- Input Parsing ---
+
+  const parseArrayInput = (input: string): number[] | null => {
+    try {
+      const parsedArray = input
+        .split(",")
+        .map((s) => s.trim())
+        .filter(s => s !== '')
+        .map((s) => {
+          const num = parseInt(s, 10);
+          if (isNaN(num)) throw new Error(`Invalid number: "${s}"`);
+          if (num < 1 || num > 100) throw new Error(`Number out of range (1-100): ${num}`);
+          return num;
+        });
+      if (parsedArray.length < MIN_ARRAY_SIZE || parsedArray.length > MAX_ARRAY_SIZE) {
+        throw new Error(`Array size must be between ${MIN_ARRAY_SIZE} and ${MAX_ARRAY_SIZE}.`);
+      }
+      return parsedArray;
+    } catch (error: any) {
+      toast({ title: "Invalid Input", description: error.message, variant: "destructive" });
+      return null;
+    }
+  };
+
+  const parseTargetInput = (input: string): number | null => {
+    try {
+      const num = parseInt(input, 10);
+      if (isNaN(num)) throw new Error(`Invalid target number: "${input}"`);
+      if (num < 1 || num > 100) throw new Error(`Target must be between 1 and 100.`);
+      return num;
+    } catch (error: any) {
+      toast({ title: "Invalid Target", description: error.message, variant: "destructive" });
+      return null;
+    }
+  };
+
+  // --- Input Handling ---
+
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+      setInputValue(event.target.value);
+  };
+
+  const handleTargetChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setTargetValue(event.target.value);
+  };
+
+  // This updates the EDITOR's graph state
+  const handleEditorGraphChange = useCallback((newGraph: Graph) => {
+      setEditorGraph(newGraph);
+      // Reset visualization steps whenever editor graph changes
+      resetVisualization();
+      // If user starts editing, assume they want to visualize this graph
+      setIsUsingEditorGraph(true);
+      // Ensure start node is valid for the EDITOR graph
+        if (startNode !== null && !newGraph.nodes.some(n => n.id === startNode)) {
+            setStartNode(newGraph.nodes.length > 0 ? newGraph.nodes[0].id : null);
+        } else if (newGraph.nodes.length > 0 && startNode === null) {
+            setStartNode(newGraph.nodes[0].id);
+        }
+  }, [resetVisualization, startNode]);
+
+
+  const handleSetArrayData = () => {
+        resetVisualization();
+        const parsedArray = parseArrayInput(inputValue);
+        if (parsedArray) {
+            if (algorithmId === 'binary-search' && category === 'search') {
+                parsedArray.sort((a, b) => a - b);
+                setInputValue(parsedArray.join(", "));
+                toast({ title: "Array Sorted", description: "Binary Search requires a sorted array." });
+            }
+            setArray(parsedArray);
+        }
+    };
+
+   // Handles manual start node selection VIA THE SELECT DROPDOWN
+   const handleStartNodeChange = (value: string) => {
+       const activeGraph = isUsingEditorGraph ? editorGraph : visualizerGraph;
+       const nodeId = parseInt(value, 10);
+       if (!isNaN(nodeId) && activeGraph.nodes.some(n => n.id === nodeId)) {
+           setStartNode(nodeId);
+           resetVisualization(); // Reset if start node changes, steps depend on it
+       }
+   };
+
+    // Handles start node selection VIA THE GRAPH EDITOR (Set Source Mode)
+   const handleSetStartNodeFromEditor = useCallback((nodeId: number) => {
+       if (algorithmId !== 'prims-algorithm') {
+           toast({ title: "Action Unavailable", description: "Setting a source node directly is only needed for Prim's algorithm.", variant: "default" });
+           return; // Only allow for Prim's
+       }
+       const activeGraph = isUsingEditorGraph ? editorGraph : visualizerGraph;
+       if (activeGraph.nodes.some(n => n.id === nodeId)) {
+           setStartNode(nodeId);
+           resetVisualization(); // Reset visualization as steps depend on start node
+           toast({ title: "Start Node Set", description: `Node ${nodeId} selected as the start node for Prim's algorithm.` });
+           // Optional: Switch back to node mode after setting the source
+           setEditorMode('node');
+       } else {
+           toast({ title: "Invalid Node", description: `Node ${nodeId} does not exist in the current graph.`, variant: "destructive" });
+       }
+   }, [algorithmId, isUsingEditorGraph, editorGraph, visualizerGraph, resetVisualization, toast]); // Dependencies
+
+
+    const handleEditorModeChange = (value: GraphEditorMode | null) => {
+        if (value) {
+             // Prevent switching to 'set-source' if not Prim's
+             if (value === 'set-source' && algorithmId !== 'prims-algorithm') {
+                 toast({ title: "Mode Unavailable", description: "'Set Source Node' mode is only for Prim's algorithm.", variant: "default" });
+                 return; // Stay in the current mode
+             }
+            setEditorMode(value);
+        }
+    };
+
+  // --- Visualization Logic ---
+
+
+ const startVisualization = () => {
+    const algorithmFunction = ALGORITHM_MAP[category]?.[algorithmId];
+    if (!algorithmFunction) {
+        toast({ title: "Error", description: "Algorithm not found.", variant: "destructive" });
+        return;
+    }
+
+    // Determine which graph to use for visualization
+    const graphToVisualize = isUsingEditorGraph ? editorGraph : visualizerGraph;
+
+    // Reset visualization using the chosen graph
+    resetVisualization(graphToVisualize);
+
+    let newSteps: AlgorithmStep[] = [];
+
+    try {
+        if (category === 'sort') {
+            if (array.length === 0) throw new Error("Please provide an array.");
+            newSteps = algorithmFunction([...array]);
+        } else if (category === 'search') {
+            if (array.length === 0) throw new Error("Please provide an array.");
+            const targetNum = parseTargetInput(targetValue);
+            if (targetNum === null) return;
+
+            let currentArray = [...array];
+            if (algorithmId === 'binary-search') {
+                const isSorted = currentArray.every((val, i, arr) => !i || val >= arr[i - 1]);
+                 if(!isSorted){
+                    currentArray.sort((a, b) => a - b);
+                    toast({ title: "Array Sorted", description: "Input array sorted for Binary Search." });
+                    setArray(currentArray);
+                    setInputValue(currentArray.join(", "));
+                 }
+            }
+            newSteps = algorithmFunction(currentArray, targetNum);
+        } else if (category === 'graph') {
+            // Use the determined graph (editor or random)
+            if (!graphToVisualize || graphToVisualize.nodes.length === 0) throw new Error("Please provide or generate a valid graph.");
+
+            let currentStartNode = startNode; // Use the state's start node
+
+            // Validate or select default start node for the *graph being visualized*
+             if (currentStartNode === null || !graphToVisualize.nodes.some(n => n.id === currentStartNode)) {
+                currentStartNode = graphToVisualize.nodes[0]?.id ?? null;
+                 if (currentStartNode === null) {
+                     throw new Error("Graph has no nodes to select a start node from.");
+                 }
+                 setStartNode(currentStartNode); // Update state if default was chosen
+                  toast({title: "Start Node Selected", description: `Using node ${currentStartNode} as start node.`});
+             }
+
+
+            if (algorithmId === 'prims-algorithm') {
+                 if (currentStartNode === null) { // Double check after potential default selection
+                    throw new Error("Cannot run Prim's without a valid start node.");
+                 }
+                newSteps = algorithmFunction(graphToVisualize, currentStartNode);
+            } else { // Kruskal's
+                 newSteps = algorithmFunction(graphToVisualize);
+            }
+
+        }
+
+        if (newSteps.length > 0) {
+            setSteps(newSteps);
+            setCurrentStepIndex(0);
+            setIsPlaying(true);
+             requestAnimationFrame(() => {
+                const firstStep = newSteps[0];
+                 if (firstStep) { // Ensure firstStep exists
+                    if (isGraphStep(firstStep)) {
+                        // Use startNodeId from the first step or the selected startNode
+                        const firstStepStartNodeId = firstStep.startNodeId ?? startNode ?? undefined;
+                        drawGraphVisualization(firstStep.graph, firstStep.mstEdges, firstStep.highlightedNodes, firstStep.highlightedEdges, firstStep.candidateEdge, firstStepStartNodeId);
+                    } else if (isArrayStep(firstStep)) {
+                        drawArray(firstStep.array, firstStep.highlight, firstStep.pivot, firstStep.sortedIndices, firstStep.target, firstStep.foundIndex);
+                    }
+                 }
+             });
+
+        } else {
+             toast({ title: "No Steps", description: "Algorithm generated 0 steps. Check input or algorithm.", variant: "default"});
+             resetVisualization(graphToVisualize); // Draw initial state of the chosen graph
+        }
+    } catch (error: any) {
+        toast({ title: "Visualization Error", description: error.message || "Could not start visualization.", variant: "destructive" });
+         resetVisualization(graphToVisualize); // Reset on error, showing the graph that caused it
+    }
+};
+
+
+
+
 
   // --- Effects for Drawing and Animation ---
 
@@ -1125,3 +1130,4 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
     </div>
   );
 }
+
