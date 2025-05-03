@@ -12,9 +12,12 @@ class SimplePriorityQueue {
   }
 
   enqueue(edge: Edge, priority: number): void {
-    this.elements.push({ edge, priority });
-    // Keep sorted by priority (weight) - Inefficient for large scale
-    this.elements.sort((a, b) => a.priority - b.priority);
+    // Ensure we don't add duplicates based on edge ID if IDs are unique like "source-target-weight"
+    if (!this.elements.some(item => item.edge.id === edge.id)) {
+      this.elements.push({ edge, priority });
+      // Keep sorted by priority (weight) - Inefficient for large scale
+      this.elements.sort((a, b) => a.priority - b.priority);
+    }
   }
 
   dequeue(): Edge | undefined {
@@ -27,17 +30,26 @@ class SimplePriorityQueue {
 
   // Update priority if a lower weight edge to the same target is found
   // Or add if not present. This is inefficient, a real PQ handles this better.
-  updateOrAdd(edge: Edge, priority: number): void {
-    const existingIndex = this.elements.findIndex(item => item.edge.target === edge.target);
+   updateOrAdd(edge: Edge, priority: number): void {
+    const existingIndex = this.elements.findIndex(item => {
+        // Check if an edge connecting to the same target node already exists in the queue
+        // This logic assumes the edge direction in the PQ is always from visited to unvisited
+        return item.edge.target === edge.target;
+    });
+
     if (existingIndex > -1) {
-        if (priority < this.elements[existingIndex].priority) {
-            this.elements[existingIndex] = { edge, priority };
-            this.elements.sort((a, b) => a.priority - b.priority); // Re-sort
-        }
+      // If an edge to the target exists, update only if the new edge has lower priority (weight)
+      if (priority < this.elements[existingIndex].priority) {
+        // Replace the existing edge details but keep the priority for sorting
+        this.elements[existingIndex] = { edge, priority };
+        this.elements.sort((a, b) => a.priority - b.priority); // Re-sort needed
+      }
     } else {
-        this.enqueue(edge, priority);
+      // If no edge to the target exists, enqueue the new edge
+      this.enqueue(edge, priority);
     }
   }
+
 
    // Get current edges in PQ for visualization
    getEdges(): Edge[] {
@@ -51,7 +63,7 @@ class SimplePriorityQueue {
  * It starts from an arbitrary node and grows the tree by adding the cheapest edge
  * connecting a node in the tree to a node outside the tree.
  */
-export function getPrimsSteps(graph: Graph, startNodeId: number = 0): GraphAlgorithmStep[] {
+export function getPrimsSteps(graph: Graph, startNodeIdInput: number): GraphAlgorithmStep[] {
   const steps: GraphAlgorithmStep[] = [];
   const mstEdges: Edge[] = [];
   const visited = new Set<number>();
@@ -59,11 +71,13 @@ export function getPrimsSteps(graph: Graph, startNodeId: number = 0): GraphAlgor
   let currentCost = 0;
 
    // Ensure startNodeId is valid
+   let startNodeId = startNodeIdInput;
    if (!graph.nodes.some(n => n.id === startNodeId)) {
-     startNodeId = graph.nodes[0]?.id ?? 0; // Default to first node if invalid or no nodes
+     startNodeId = graph.nodes[0]?.id ?? -1; // Use input, fallback to first node, then -1 if no nodes
    }
-   if (graph.nodes.length === 0) {
-       steps.push({ graph, mstEdges: [], message: "Graph has no nodes.", highlightedEdges: [], highlightedNodes: [] });
+
+   if (graph.nodes.length === 0 || startNodeId === -1) {
+       steps.push({ graph, mstEdges: [], message: "Graph has no nodes or start node is invalid.", highlightedEdges: [], highlightedNodes: [], startNodeId: undefined });
        return steps;
    }
 
@@ -72,35 +86,32 @@ export function getPrimsSteps(graph: Graph, startNodeId: number = 0): GraphAlgor
   steps.push({
     graph: graph,
     mstEdges: [],
-    highlightedNodes: [],
+    highlightedNodes: [startNodeId], // Highlight start node from the beginning
     highlightedEdges: [],
     message: `Initial graph. Starting Prim's algorithm from node ${startNodeId}.`,
+    startNodeId: startNodeId, // Include startNodeId for persistent highlighting
   });
 
   // 1. Start with the initial node
   visited.add(startNodeId);
-   steps.push({
-    graph: graph,
-    mstEdges: [],
-    highlightedNodes: [startNodeId],
-    highlightedEdges: [],
-    message: `Adding start node ${startNodeId} to the visited set.`,
-  });
-
+   // Step already included in step 0 effectively
 
   // Add all edges connected to the start node to the priority queue
   graph.edges.forEach(edge => {
     let neighborNodeId = -1;
+    let edgeToAdd = edge; // Use a mutable copy
     if (edge.source === startNodeId && !visited.has(edge.target)) {
         neighborNodeId = edge.target;
+        // Ensure edge direction is consistent: source=visited, target=unvisited
+        edgeToAdd = { ...edge, source: startNodeId, target: neighborNodeId };
     } else if (edge.target === startNodeId && !visited.has(edge.source)) {
         neighborNodeId = edge.source;
-        // Ensure edge representation is consistent (source=visited, target=unvisited) for PQ logic
-        edge = { ...edge, source: startNodeId, target: neighborNodeId };
+        // Ensure edge representation is consistent
+        edgeToAdd = { ...edge, source: startNodeId, target: neighborNodeId };
     }
 
     if (neighborNodeId !== -1) {
-        edgeQueue.enqueue(edge, edge.weight);
+        edgeQueue.enqueue(edgeToAdd, edgeToAdd.weight);
     }
   });
 
@@ -110,6 +121,7 @@ export function getPrimsSteps(graph: Graph, startNodeId: number = 0): GraphAlgor
     highlightedNodes: [startNodeId],
     highlightedEdges: edgeQueue.getEdges().map(e => e.id), // Highlight edges added to PQ
     message: `Added edges connected to node ${startNodeId} to the priority queue. PQ: [${edgeQueue.getEdges().map(e => `${e.id}(${e.weight})`).join(', ')}]`,
+    startNodeId: startNodeId,
   });
 
 
@@ -127,10 +139,11 @@ export function getPrimsSteps(graph: Graph, startNodeId: number = 0): GraphAlgor
      steps.push({
       graph: graph,
       mstEdges: [...mstEdges],
-      highlightedNodes: Array.from(visited), // Highlight nodes already in MST
+      highlightedNodes: [...Array.from(visited), nextNode], // Highlight nodes already in MST + potential next node
       highlightedEdges: [...mstEdges.map(e => e.id), minEdge.id], // Highlight MST edges + candidate
       candidateEdge: minEdge,
       message: `Selecting edge ${minEdge.id} (${minEdge.source}-${minEdge.target}) with minimum weight ${minEdge.weight} from PQ. Considering node ${nextNode}.`,
+      startNodeId: startNodeId,
     });
 
 
@@ -139,10 +152,11 @@ export function getPrimsSteps(graph: Graph, startNodeId: number = 0): GraphAlgor
          steps.push({
           graph: graph,
           mstEdges: [...mstEdges],
-          highlightedNodes: Array.from(visited),
+          highlightedNodes: Array.from(visited), // Only highlight visited
           highlightedEdges: mstEdges.map(e => e.id), // Only highlight existing MST edges
            candidateEdge: minEdge, // Show rejected edge
-          message: `Node ${nextNode} is already visited. Skipping edge ${minEdge.id}.`,
+          message: `Node ${nextNode} is already visited. Skipping edge ${minEdge.id}. PQ: [${edgeQueue.getEdges().map(e => `${e.id}(${e.weight})`).join(', ')}]`,
+          startNodeId: startNodeId,
         });
       continue;
     }
@@ -157,34 +171,35 @@ export function getPrimsSteps(graph: Graph, startNodeId: number = 0): GraphAlgor
       mstEdges: [...mstEdges],
       highlightedNodes: Array.from(visited), // Highlight updated visited set
       highlightedEdges: mstEdges.map(e => e.id), // Highlight updated MST edges
-      candidateEdge: minEdge,
+      candidateEdge: minEdge, // Show the edge just added
       message: `Adding node ${nextNode} to visited set and edge ${minEdge.id} to MST. MST Cost: ${currentCost}.`,
+      startNodeId: startNodeId,
     });
 
 
-    // Add/update edges connected to the newly added node to the priority queue
+    // Add/update edges connected to the newly added node 'nextNode' to the priority queue
     let addedToQueueInfo: string[] = [];
     graph.edges.forEach(edge => {
       let neighborNodeId = -1;
-      let edgeToAdd = edge;
+      let edgeToAdd = edge; // Mutable copy
 
       // Find neighbor NOT in visited set, connected to the newly added node 'nextNode'
       if (edge.source === nextNode && !visited.has(edge.target)) {
           neighborNodeId = edge.target;
-          edgeToAdd = { ...edge, source: nextNode, target: neighborNodeId }; // Ensure source is visited
+          // Ensure edge direction: source = just visited, target = unvisited
+          edgeToAdd = { ...edge, source: nextNode, target: neighborNodeId };
       } else if (edge.target === nextNode && !visited.has(edge.source)) {
           neighborNodeId = edge.source;
-          edgeToAdd = { ...edge, source: nextNode, target: neighborNodeId }; // Ensure source is visited
+          // Ensure edge direction: source = just visited, target = unvisited
+          edgeToAdd = { ...edge, source: nextNode, target: neighborNodeId };
       }
 
-
       if (neighborNodeId !== -1) {
-        // Check if we are updating or adding - SimplePQ handles this internally
-        const existing = edgeQueue.elements.find(item => item.edge.target === neighborNodeId);
-         if (!existing || edgeToAdd.weight < existing.priority) {
-             edgeQueue.updateOrAdd(edgeToAdd, edgeToAdd.weight);
-              addedToQueueInfo.push(`${edgeToAdd.id}(${edgeToAdd.weight})`);
-         }
+          edgeQueue.updateOrAdd(edgeToAdd, edgeToAdd.weight);
+          // Check if it was actually added or updated (updateOrAdd handles logic)
+          // For message simplicity, we might just list potential candidates.
+          // A more precise message requires checking if updateOrAdd actually modified the PQ.
+           addedToQueueInfo.push(`${edgeToAdd.id}(${edgeToAdd.weight})`);
 
       }
     });
@@ -194,7 +209,8 @@ export function getPrimsSteps(graph: Graph, startNodeId: number = 0): GraphAlgor
       mstEdges: [...mstEdges],
       highlightedNodes: Array.from(visited),
       highlightedEdges: [...mstEdges.map(e => e.id), ...edgeQueue.getEdges().map(e=> e.id)], // Highlight MST + PQ edges
-      message: `Added/Updated edges connected to node ${nextNode} in PQ. Edges added/updated: [${addedToQueueInfo.join(', ')}]. PQ: [${edgeQueue.getEdges().map(e => `${e.id}(${e.weight})`).join(', ')}]`,
+      message: `Exploring neighbors of node ${nextNode}. PQ updated/checked: [${edgeQueue.getEdges().map(e => `${e.id}(${e.weight})`).join(', ')}]`,
+       startNodeId: startNodeId,
     });
 
   }
@@ -211,6 +227,7 @@ export function getPrimsSteps(graph: Graph, startNodeId: number = 0): GraphAlgor
     highlightedNodes: Array.from(visited), // Highlight final visited nodes
     highlightedEdges: mstEdges.map(e => e.id), // Highlight final MST edges
     message: finalMessage,
+    startNodeId: startNodeId,
   });
 
   return steps;

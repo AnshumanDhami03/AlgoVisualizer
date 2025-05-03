@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Play, Pause, RotateCcw, FastForward, Shuffle as ShuffleIcon, Search as SearchIcon, Share2 as GraphIcon, Plus, Minus } from "lucide-react";
+import { Play, Pause, RotateCcw, Shuffle as ShuffleIcon, Search as SearchIcon, Share2 as GraphIcon, Target } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import type { AlgorithmStep, ArrayAlgorithmStep, GraphAlgorithmStep, Graph, Node, Edge } from '@/lib/types'; // Import types
 import { isGraphStep, isArrayStep } from '@/lib/types'; // Import type guards
+import GraphEditor from './graph-editor'; // Import the new GraphEditor component
 
 // Array Algorithm Implementations
 import { getBubbleSortSteps } from "@/lib/algorithms/sorting/bubbleSort";
@@ -42,9 +44,10 @@ const MAX_SPEED = 1000; // ms
 const DEFAULT_SPEED = 300; // ms
 
 // Constants for Graph Visualization
-const NODE_RADIUS = 15;
+const NODE_RADIUS = 18; // Slightly larger to accommodate text better
 const EDGE_WIDTH = 2;
 const MST_EDGE_WIDTH = 4;
+const START_NODE_COLOR = "hsl(var(--accent))"; // Color for the start node in Prim's
 
 // Algorithm Function Mapping
 const ALGORITHM_MAP: Record<string, Record<string, Function>> = {
@@ -100,27 +103,43 @@ const generateRandomGraph = (numNodes = 7, edgeProbability = 0.4): Graph => {
     }
 
     // Ensure graph is connected (simple approach: add edges if needed)
-     if (numNodes > 1 && edges.length < numNodes - 1) {
-         const dsu = { parent: {} as Record<number, number> };
-         nodes.forEach(n => dsu.parent[n.id] = n.id);
-         const find = (k: number): number => {
-             if (dsu.parent[k] === k) return k;
-             return dsu.parent[k] = find(dsu.parent[k]);
-         };
-         const union = (a: number, b: number) => {
-             const rootA = find(a);
-             const rootB = find(b);
-             if (rootA !== rootB) dsu.parent[rootA] = rootB;
-         };
-         edges.forEach(e => union(e.source, e.target));
+     if (nodes.length > 1 && edges.length < nodes.length - 1) {
+         const connectedComponents = new Map<number, number[]>();
+         const visited = new Set<number>();
 
-         for(let i = 1; i < numNodes; i++){
-             if(find(0) !== find(i)){
-                 const weight = Math.floor(Math.random() * 20) + 1;
-                 const edgeId = `connect-${0}-${i}-${weight}`;
-                  if (!edgeSet.has(edgeId) && !edgeSet.has(`connect-${i}-${0}-${weight}`)) {
-                     edges.push({ id: edgeId, source: 0, target: i, weight });
-                     union(0, i);
+         const dfs = (nodeId: number, componentId: number) => {
+             visited.add(nodeId);
+             if (!connectedComponents.has(componentId)) {
+                 connectedComponents.set(componentId, []);
+             }
+             connectedComponents.get(componentId)!.push(nodeId);
+             const neighbors = edges.flatMap(e => {
+                 if (e.source === nodeId && !visited.has(e.target)) return [e.target];
+                 if (e.target === nodeId && !visited.has(e.source)) return [e.source];
+                 return [];
+             });
+             neighbors.forEach(neighbor => dfs(neighbor, componentId));
+         };
+
+         let componentId = 0;
+         nodes.forEach(node => {
+             if (!visited.has(node.id)) {
+                 dfs(node.id, componentId++);
+             }
+         });
+
+         // If more than one component, add edges to connect them
+         if (connectedComponents.size > 1) {
+             const components = Array.from(connectedComponents.values());
+             for (let i = 1; i < components.length; i++) {
+                 const nodeA = components[0][0]; // Node from first component
+                 const nodeB = components[i][0]; // Node from current component
+                 const weight = Math.floor(Math.random() * 15) + 5; // Weight for connecting edges
+                 const edgeId = `connect-${nodeA}-${nodeB}-${weight}`;
+                 const reverseEdgeId = `connect-${nodeB}-${nodeA}-${weight}`;
+
+                 if (!edgeSet.has(edgeId) && !edgeSet.has(reverseEdgeId)) {
+                     edges.push({ id: edgeId, source: nodeA, target: nodeB, weight });
                      edgeSet.add(edgeId);
                  }
              }
@@ -140,7 +159,8 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
   // State for Graph Algorithms
   const [graph, setGraph] = useState<Graph>(generateRandomGraph()); // Initialize with a default graph
-  const [graphInput, setGraphInput] = useState<string>(JSON.stringify(graph, null, 2)); // For editing graph JSON
+  const [startNode, setStartNode] = useState<number | null>(null); // For Prim's start node
+
 
   // Common State
   const [steps, setSteps] = useState<AlgorithmStep[]>([]);
@@ -162,12 +182,13 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
     setIsGenerated(true);
   }, []); // Removed resetVisualization from dependencies to avoid loops
 
-   const initializeGraph = useCallback(() => {
-        const initialGraph = generateRandomGraph();
-        setGraph(initialGraph);
-        setGraphInput(JSON.stringify(initialGraph, null, 2));
+   const initializeGraph = useCallback((newGraph?: Graph) => {
+        const graphToUse = newGraph || generateRandomGraph();
+        setGraph(graphToUse);
+        // Automatically select the first node as the default start node if available
+        setStartNode(graphToUse.nodes.length > 0 ? graphToUse.nodes[0].id : null);
         resetVisualization();
-        setIsGenerated(true);
+        setIsGenerated(!newGraph); // Mark as generated only if no specific graph was provided
     }, []); // Removed resetVisualization from dependencies
 
   // Initialize based on category when component mounts or category/algorithm changes
@@ -176,7 +197,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
     if (category === 'sort' || category === 'search') {
       generateRandomArray();
     } else if (category === 'graph') {
-      initializeGraph();
+      initializeGraph(); // Generate a random graph and set default start node
     }
      // Cleanup timeouts/intervals on unmount or change
     return () => {
@@ -184,6 +205,20 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
     };
      // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [algorithmId, category]); // Dependencies: algorithmId, category
+
+   // Update default start node if graph changes and has nodes
+   useEffect(() => {
+       if (category === 'graph' && graph.nodes.length > 0 && startNode === null) {
+           setStartNode(graph.nodes[0].id);
+       }
+        if (category === 'graph' && graph.nodes.length > 0 && startNode !== null && !graph.nodes.some(n => n.id === startNode)) {
+             // If current start node doesn't exist anymore, reset to first node
+             setStartNode(graph.nodes[0].id);
+         }
+       if (category === 'graph' && graph.nodes.length === 0) {
+           setStartNode(null); // Clear start node if graph becomes empty
+       }
+   }, [graph, category, startNode]); // Depend on graph and category
 
   // --- Input Parsing ---
 
@@ -221,57 +256,51 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
     }
   };
 
-    const parseGraphInput = (input: string): Graph | null => {
-        try {
-            const parsed = JSON.parse(input);
-            // Basic validation (can be extended)
-            if (!parsed || typeof parsed !== 'object') throw new Error("Invalid JSON format.");
-            if (!Array.isArray(parsed.nodes)) throw new Error("Missing or invalid 'nodes' array.");
-            if (!Array.isArray(parsed.edges)) throw new Error("Missing or invalid 'edges' array.");
-            // TODO: Add more detailed validation for node/edge properties if needed
-            return parsed as Graph;
-        } catch (error: any) {
-            toast({ title: "Invalid Graph Input", description: error.message || "Please enter valid JSON for the graph.", variant: "destructive" });
-            return null;
-        }
-    };
-
-
   // --- Input Handling ---
 
-  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-     if (category === 'graph') {
-         setGraphInput(event.target.value);
-     } else {
-        setInputValue(event.target.value);
-     }
-    setIsGenerated(false); // Mark as user input
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+      setInputValue(event.target.value);
+      setIsGenerated(false); // Mark as user input
   };
 
   const handleTargetChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setTargetValue(event.target.value);
   };
 
-    const handleSetData = () => {
+  const handleGraphChange = (newGraph: Graph) => {
+      setGraph(newGraph);
+      // Reset visualization when graph is manually edited
+      resetVisualization();
+      setIsGenerated(false);
+      // Ensure start node is still valid, or reset if not
+        if (startNode !== null && !newGraph.nodes.some(n => n.id === startNode)) {
+            setStartNode(newGraph.nodes.length > 0 ? newGraph.nodes[0].id : null);
+        } else if (newGraph.nodes.length > 0 && startNode === null) {
+            setStartNode(newGraph.nodes[0].id);
+        }
+  };
+
+
+  const handleSetArrayData = () => {
         resetVisualization(); // Reset steps/playing state
-        if (category === 'graph') {
-            const parsedGraph = parseGraphInput(graphInput);
-            if (parsedGraph) {
-                setGraph(parsedGraph);
+        const parsedArray = parseArrayInput(inputValue);
+        if (parsedArray) {
+            if (algorithmId === 'binary-search' && category === 'search') {
+                parsedArray.sort((a, b) => a - b);
+                setInputValue(parsedArray.join(", "));
+                toast({ title: "Array Sorted", description: "Binary Search requires a sorted array." });
             }
-        } else {
-            const parsedArray = parseArrayInput(inputValue);
-            if (parsedArray) {
-                if (algorithmId === 'binary-search' && category === 'search') {
-                    parsedArray.sort((a, b) => a - b);
-                    setInputValue(parsedArray.join(", "));
-                    toast({ title: "Array Sorted", description: "Binary Search requires a sorted array." });
-                }
-                setArray(parsedArray);
-            }
+            setArray(parsedArray);
         }
     };
 
+   const handleStartNodeChange = (value: string) => {
+       const nodeId = parseInt(value, 10);
+       if (!isNaN(nodeId) && graph.nodes.some(n => n.id === nodeId)) {
+           setStartNode(nodeId);
+           resetVisualization(); // Reset if start node changes, as steps depend on it
+       }
+   };
 
   // --- Visualization Logic ---
 
@@ -284,13 +313,13 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
      // Immediately draw the current state after reset
       requestAnimationFrame(() => { // Ensure canvas context is ready
         if (category === 'graph') {
-           drawGraph(graph, [], []); // Draw initial graph state
+           drawGraph(graph, [], [], [], undefined, algorithmId === 'prims-algorithm' ? startNode ?? undefined : undefined); // Draw initial graph state with potential start node highlight
         } else {
            drawArray(array); // Draw initial array state
         }
       });
      // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category, array, graph]); // Depend on category and the relevant data structure
+  }, [category, array, graph, startNode, algorithmId]); // Depend on graph, category, startNode and algorithmId
 
 
  const startVisualization = () => {
@@ -299,6 +328,8 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
         toast({ title: "Error", description: "Algorithm not found.", variant: "destructive" });
         return;
     }
+
+    resetVisualization(); // Ensure clean state before starting
 
     let newSteps: AlgorithmStep[] = [];
 
@@ -313,33 +344,52 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
             let currentArray = [...array];
             if (algorithmId === 'binary-search') {
-                currentArray.sort((a, b) => a - b);
-                 // Check if sorting actually changed the user's input array
-                 const originalInputArray = parseArrayInput(inputValue);
-                if (originalInputArray && JSON.stringify(originalInputArray) !== JSON.stringify(currentArray)) {
+                // Only sort if not already sorted by the user (check against original input string if possible)
+                const isSorted = currentArray.every((val, i, arr) => !i || val >= arr[i - 1]);
+                 if(!isSorted){
+                    currentArray.sort((a, b) => a - b);
                     toast({ title: "Array Sorted", description: "Input array sorted for Binary Search." });
-                    setArray(currentArray);
-                    setInputValue(currentArray.join(", "));
+                    setArray(currentArray); // Update state if sorted
+                    setInputValue(currentArray.join(", ")); // Update input display
                  }
             }
             newSteps = algorithmFunction(currentArray, targetNum);
         } else if (category === 'graph') {
             if (!graph || graph.nodes.length === 0) throw new Error("Please provide a valid graph.");
-            // Prim's might need a start node, Kruskal's doesn't. Pass graph directly.
-            // Let the algorithm function handle specific needs.
-            newSteps = algorithmFunction(graph);
+            if (algorithmId === 'prims-algorithm') {
+                if (startNode === null) {
+                    throw new Error("Please select a starting node for Prim's Algorithm.");
+                }
+                 newSteps = algorithmFunction(graph, startNode); // Pass start node to Prim's
+            } else {
+                // Kruskal's doesn't need a start node
+                 newSteps = algorithmFunction(graph);
+            }
+
         }
 
         if (newSteps.length > 0) {
             setSteps(newSteps);
             setCurrentStepIndex(0);
             setIsPlaying(true);
+            // Draw the first step immediately after setting state
+             requestAnimationFrame(() => {
+                const firstStep = newSteps[0];
+                 if (isGraphStep(firstStep)) {
+                    drawGraph(firstStep.graph, firstStep.mstEdges, firstStep.highlightedNodes, firstStep.highlightedEdges, firstStep.candidateEdge, firstStep.startNodeId);
+                 } else if (isArrayStep(firstStep)) {
+                    drawArray(firstStep.array, firstStep.highlight, firstStep.pivot, firstStep.sortedIndices, firstStep.target, firstStep.foundIndex);
+                 }
+             });
+
         } else {
-             toast({ title: "Visualization Ready", description: "Generated 0 steps. Check input or algorithm.", variant: "default"});
+             toast({ title: "No Steps", description: "Algorithm generated 0 steps. Check input or algorithm.", variant: "default"});
+             // Draw initial state if no steps are generated
+             resetVisualization();
         }
     } catch (error: any) {
         toast({ title: "Visualization Error", description: error.message || "Could not start visualization.", variant: "destructive" });
-         resetVisualization();
+         resetVisualization(); // Reset on error
     }
 };
 
@@ -378,7 +428,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
       // Determine bar color
       if (foundIndex === index) ctx.fillStyle = "hsl(var(--accent))"; // Found item (accent)
-      else if (target === value && category === 'search') ctx.fillStyle = "#FFC107"; // Potential target
+      else if (target === value && category === 'search' && !sortedIndices.includes(index)) ctx.fillStyle = "#FFC107"; // Potential target (Yellowish)
       else if (sortedIndices.includes(index)) ctx.fillStyle = "hsl(var(--secondary))"; // Sorted (secondary)
       else if (highlight.includes(index)) ctx.fillStyle = "hsl(var(--accent))"; // Highlighted (accent)
        else if (pivot === index) ctx.fillStyle = "#E91E63"; // Pivot (Pink) - Consider using a theme color?
@@ -399,10 +449,11 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
   const drawGraph = useCallback((
         graphData: Graph,
-        mstEdges: Edge[],
+        mstEdges: Edge[] = [],
         highlightedNodes: number[] = [],
         highlightedEdges: string[] = [],
-        candidateEdge?: Edge
+        candidateEdge?: Edge,
+        persistentStartNodeId?: number // Add parameter for persistent start node highlight
     ) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -415,7 +466,8 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
         const nodeMap = new Map(graphData.nodes.map(node => [node.id, node]));
         const mstEdgeIds = new Set(mstEdges.map(edge => edge.id));
         const highlightedEdgeIds = new Set(highlightedEdges);
-        const highlightedNodeIds = new Set(highlightedNodes);
+        const highlightedNodeIds = new Set(highlightedNodes); // Step-specific highlights
+
 
         // --- Draw Edges ---
         graphData.edges.forEach(edge => {
@@ -428,50 +480,64 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
             ctx.lineTo(targetNode.x, targetNode.y);
 
             // Styling
-            if (mstEdgeIds.has(edge.id)) {
+            let edgeAlpha = 0.5; // Default fade for non-MST edges
+            let edgeWidth = EDGE_WIDTH;
+            let lineDash: number[] = [];
+
+             if (mstEdgeIds.has(edge.id)) {
                 ctx.strokeStyle = "hsl(var(--secondary))"; // MST Edge color (Teal)
-                ctx.lineWidth = MST_EDGE_WIDTH;
-                ctx.globalAlpha = 1.0;
+                edgeWidth = MST_EDGE_WIDTH;
+                edgeAlpha = 1.0;
             } else if (candidateEdge && edge.id === candidateEdge.id) {
-                 // Check if candidate was accepted (is in mstEdges) or rejected
+                 // Check if candidate was accepted (is in mstEdges) or rejected/considering
                  if (mstEdgeIds.has(candidateEdge.id)) {
-                      ctx.strokeStyle = "hsl(var(--secondary))"; // Accepted candidate (already drawn as MST)
-                      ctx.lineWidth = MST_EDGE_WIDTH;
-                      ctx.globalAlpha = 1.0;
+                     // Already drawn as MST edge
                  } else {
                      // Rejected or still considering candidate
                      ctx.strokeStyle = "hsl(var(--destructive))"; // Rejected/Considering Candidate Edge (Reddish)
-                     ctx.lineWidth = EDGE_WIDTH * 1.5; // Slightly thicker
-                     ctx.setLineDash([5, 5]); // Dashed line
-                     ctx.globalAlpha = 0.8;
+                     edgeWidth = EDGE_WIDTH * 1.5; // Slightly thicker
+                     lineDash = [5, 5]; // Dashed line
+                     edgeAlpha = 0.8;
                  }
             } else if (highlightedEdgeIds.has(edge.id)) {
                  ctx.strokeStyle = "hsl(var(--primary))"; // Highlighted edge (Purple)
-                 ctx.lineWidth = EDGE_WIDTH * 1.2;
-                  ctx.globalAlpha = 0.9;
+                 edgeWidth = EDGE_WIDTH * 1.2;
+                 edgeAlpha = 0.9;
             }
              else {
                 ctx.strokeStyle = "hsl(var(--muted-foreground))"; // Default edge color
-                ctx.lineWidth = EDGE_WIDTH;
-                 ctx.globalAlpha = 0.5; // More faded
+                 // edgeWidth remains EDGE_WIDTH
+                 // edgeAlpha remains 0.5
             }
 
+            ctx.lineWidth = edgeWidth;
+            ctx.globalAlpha = edgeAlpha;
+            ctx.setLineDash(lineDash);
             ctx.stroke();
             ctx.setLineDash([]); // Reset line dash
-             ctx.globalAlpha = 1.0; // Reset alpha
+             ctx.globalAlpha = 1.0; // Reset alpha for text
 
             // Draw edge weight
             const midX = (sourceNode.x + targetNode.x) / 2;
             const midY = (sourceNode.y + targetNode.y) / 2;
-            ctx.fillStyle = ctx.strokeStyle; // Match text color to line color slightly faded
-            ctx.globalAlpha = ctx.globalAlpha * 0.8; // Fade text slightly more
+            ctx.fillStyle = ctx.strokeStyle; // Match text color to line color
+            ctx.globalAlpha = edgeAlpha * 0.9; // Fade text slightly more than line
             ctx.font = '10px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
-             // Simple offset to avoid overlap with node
+             // Simple offset to avoid overlap with node/line
             const angle = Math.atan2(targetNode.y - sourceNode.y, targetNode.x - sourceNode.x);
-            const offsetX = Math.sin(angle) * 5;
-            const offsetY = -Math.cos(angle) * 5;
+            const offsetX = Math.sin(angle) * 6;
+            const offsetY = -Math.cos(angle) * 6;
+            // Add a background for readability
+            const textWidth = ctx.measureText(edge.weight.toString()).width;
+             ctx.fillStyle = "hsl(var(--background))"; // Use background for text box
+             ctx.globalAlpha = edgeAlpha * 0.8; // Background slightly more transparent
+             ctx.fillRect(midX + offsetX - textWidth/2 - 2, midY + offsetY - 8, textWidth + 4, 10); // Small background rect
+
+            // Draw text on top
+             ctx.fillStyle = ctx.strokeStyle;
+             ctx.globalAlpha = edgeAlpha * 1.1 > 1.0 ? 1.0 : edgeAlpha * 1.1; // Make text slightly less faded
             ctx.fillText(edge.weight.toString(), midX + offsetX, midY + offsetY);
              ctx.globalAlpha = 1.0; // Reset alpha
         });
@@ -482,26 +548,40 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
             ctx.beginPath();
             ctx.arc(node.x, node.y, NODE_RADIUS, 0, Math.PI * 2);
 
-            // Styling
-            if (highlightedNodeIds.has(node.id)) {
-                ctx.fillStyle = "hsl(var(--accent))"; // Highlighted node (Orange)
-                ctx.strokeStyle = "hsl(var(--accent-foreground))";
-            } else if (mstEdges.some(e => e.source === node.id || e.target === node.id) || (mstEdges.length === 0 && highlightedNodeIds.has(node.id))) {
-                 // Part of MST (or the single starting node)
+            // Determine Fill Style
+             if (node.id === persistentStartNodeId) {
+                 ctx.fillStyle = START_NODE_COLOR; // Specific color for start node
+             } else if (highlightedNodeIds.has(node.id)) {
+                ctx.fillStyle = "hsl(var(--accent))"; // Step-specific highlighted node (Orange)
+             } else if (mstEdges.some(e => e.source === node.id || e.target === node.id) ) {
+                 // Node is part of the final MST (or intermediate MST)
                  ctx.fillStyle = "hsl(var(--primary))"; // Visited/MST node color (Purple)
-                 ctx.strokeStyle = "hsl(var(--primary-foreground))";
+            } else {
+                ctx.fillStyle = "hsl(var(--muted))"; // Default node color
+            }
+
+            // Determine Stroke Style (Border)
+            if (node.id === persistentStartNodeId) {
+                ctx.strokeStyle = "hsl(var(--accent-foreground))"; // Contrast border for start node
+            } else if (highlightedNodeIds.has(node.id)) {
+                ctx.strokeStyle = "hsl(var(--accent-foreground))"; // Contrast border for step highlight
+            } else if (mstEdges.some(e => e.source === node.id || e.target === node.id)) {
+                 ctx.strokeStyle = "hsl(var(--primary-foreground))"; // Contrast border for MST nodes
             }
              else {
-                ctx.fillStyle = "hsl(var(--muted))"; // Default node color
-                ctx.strokeStyle = "hsl(var(--muted-foreground))";
+                ctx.strokeStyle = "hsl(var(--muted-foreground))"; // Default border
             }
+
             ctx.lineWidth = 1.5;
+             if (node.id === persistentStartNodeId) {
+                 ctx.lineWidth = 2.5; // Make start node border thicker
+             }
             ctx.fill();
             ctx.stroke();
 
 
-            // Draw node ID
-            ctx.fillStyle = ctx.strokeStyle; // Match ID color to border
+            // Draw node ID (inside the node)
+            ctx.fillStyle = ctx.strokeStyle; // Match ID color to border for contrast against fill
             ctx.font = 'bold 12px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -513,56 +593,56 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
   // --- Effects for Drawing and Animation ---
 
  useEffect(() => {
-    if (steps.length === 0) {
-         // Draw initial state when steps are cleared or component initializes
+     let currentStep = steps[currentStepIndex];
+     const isAnimating = steps.length > 0 && currentStepIndex < steps.length;
+
+     // Determine the start node ID for persistent highlighting
+     const persistentStartId = (algorithmId === 'prims-algorithm' && isGraphStep(currentStep || {}))
+         ? (currentStep?.startNodeId ?? startNode ?? undefined) // Use step's start node if available, else fallback
+         : undefined;
+
+
+    if (!isAnimating) {
+         // Draw initial/reset state when not animating
           requestAnimationFrame(() => {
              if (category === 'graph' && graph) {
-                 drawGraph(graph, []);
+                 // Draw graph with MST edges empty, no step highlights, but potential persistent start node
+                 drawGraph(graph, [], [], [], undefined, persistentStartId);
              } else if (array) {
                  drawArray(array);
              }
           });
-         return; // Exit early if no steps
+         return; // Exit early
      }
 
-
-     const currentStep = steps[currentStepIndex];
-     if (!currentStep) return; // Should not happen if steps.length > 0
+     // We have a valid step to draw during animation
+     if (!currentStep) return;
 
     requestAnimationFrame(() => {
          if (isGraphStep(currentStep)) {
              const { graph: currentGraph, mstEdges, highlightedNodes, highlightedEdges, candidateEdge } = currentStep;
-             drawGraph(currentGraph, mstEdges, highlightedNodes, highlightedEdges, candidateEdge);
+             // Pass persistentStartId to drawGraph
+             drawGraph(currentGraph, mstEdges, highlightedNodes, highlightedEdges, candidateEdge, persistentStartId);
          } else if (isArrayStep(currentStep)) {
              const { array: stepArray, highlight, pivot, sortedIndices, target, foundIndex } = currentStep;
              drawArray(stepArray, highlight, pivot, sortedIndices, target, foundIndex);
          }
     });
 
- }, [currentStepIndex, steps, drawArray, drawGraph, category, graph, array]);
+ }, [currentStepIndex, steps, drawArray, drawGraph, category, graph, array, startNode, algorithmId]);
 
 
    useEffect(() => {
-    if (isPlaying && currentStepIndex < steps.length) {
+    if (isPlaying && currentStepIndex < steps.length -1) { // Check against length - 1 to stop *before* last step is processed by timeout
       timeoutId.current = setTimeout(() => {
         setCurrentStepIndex((prevIndex) => prevIndex + 1);
       }, speed);
-    } else if (isPlaying && currentStepIndex >= steps.length) {
+    } else if (isPlaying && currentStepIndex >= steps.length - 1 && steps.length > 0) { // Handle completion
         setIsPlaying(false); // Stop playing when finished
          // Ensure the last step message is displayed
          const lastStepMessage = steps[steps.length -1]?.message || "Finished.";
          toast({ title: "Visualization Complete", description: lastStepMessage });
-         // Explicitly draw the final state
-          requestAnimationFrame(() => {
-             const finalStep = steps[steps.length - 1];
-             if (finalStep) {
-                  if (isGraphStep(finalStep)) {
-                      drawGraph(finalStep.graph, finalStep.mstEdges, finalStep.highlightedNodes, finalStep.highlightedEdges, finalStep.candidateEdge);
-                  } else if (isArrayStep(finalStep)) {
-                      drawArray(finalStep.array, finalStep.highlight, finalStep.pivot, finalStep.sortedIndices, finalStep.target, finalStep.foundIndex);
-                  }
-             }
-         });
+         // CurrentStepIndex should be at the last step, useEffect[currentStepIndex] will draw it.
 
     }
 
@@ -572,7 +652,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
         clearTimeout(timeoutId.current);
       }
     };
-  }, [isPlaying, currentStepIndex, steps, speed, toast, drawGraph, drawArray]);
+  }, [isPlaying, currentStepIndex, steps, speed, toast]); // Removed drawGraph, drawArray
 
 
   // --- Event Handlers ---
@@ -580,10 +660,19 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
   const handlePlayPause = () => {
     if (steps.length === 0) {
         startVisualization(); // Start if no steps exist yet
-    } else if (currentStepIndex >= steps.length) {
+    } else if (currentStepIndex >= steps.length -1 ) { // If on last step or beyond
         // If finished, restart from the beginning
         setCurrentStepIndex(0);
         setIsPlaying(true);
+         // Trigger drawing of the first step
+             requestAnimationFrame(() => {
+                const firstStep = steps[0];
+                 if (isGraphStep(firstStep)) {
+                     drawGraph(firstStep.graph, firstStep.mstEdges, firstStep.highlightedNodes, firstStep.highlightedEdges, firstStep.candidateEdge, firstStep.startNodeId);
+                 } else if (isArrayStep(firstStep)) {
+                     drawArray(firstStep.array, firstStep.highlight, firstStep.pivot, firstStep.sortedIndices, firstStep.target, firstStep.foundIndex);
+                 }
+             });
     }
      else {
        setIsPlaying(!isPlaying);
@@ -591,8 +680,20 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
   };
 
   const handleReset = () => {
-     resetVisualization(); // Resets steps, playing state, and draws initial state via useEffect
-     // No need to explicitly draw here, resetVisualization handles it
+     if (category === 'graph') {
+         initializeGraph(graph); // Re-initialize with current graph structure but reset state
+     } else {
+         // For array, reset based on current input value or generate new random
+         const currentArray = parseArrayInput(inputValue);
+         if (currentArray && !isGenerated) {
+            setArray(currentArray); // Keep user's array
+            resetVisualization();
+         } else {
+             generateRandomArray(array.length || DEFAULT_ARRAY_SIZE); // Generate new random
+         }
+
+     }
+     // resetVisualization is called within initializeGraph/generateRandomArray
   };
 
   const handleSpeedChange = (value: number[]) => {
@@ -602,36 +703,61 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
   // --- Render ---
 
-  const currentExplanation = steps[currentStepIndex]?.message || (steps.length > 0 && currentStepIndex >= steps.length ? steps[steps.length -1]?.message : "Ready to visualize.");
+   const currentStepData = steps[currentStepIndex];
+   let currentExplanation = "Ready to visualize.";
+   if (currentStepData) {
+       currentExplanation = currentStepData.message;
+   } else if (steps.length > 0 && currentStepIndex >= steps.length) {
+       currentExplanation = steps[steps.length - 1]?.message || "Finished.";
+   }
+
+
   const isGraphCategory = category === 'graph';
 
 
   return (
     <div className="flex flex-col lg:flex-row gap-6">
       {/* Controls Column */}
-      <Card className="w-full lg:w-1/3 xl:w-1/4"> {/* Adjusted width */}
+      <Card className="w-full lg:w-1/3 xl:w-1/4">
         <CardHeader>
           <CardTitle>Controls</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Input Section - Conditional */}
           {isGraphCategory ? (
-            <div className="space-y-2">
-                <Label htmlFor="graph-input">Graph Data (JSON)</Label>
-                <textarea
-                    id="graph-input"
-                    value={graphInput}
-                    onChange={handleInputChange}
-                    placeholder='Enter graph JSON: { "nodes": [...], "edges": [...] }'
-                    className="h-32 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                />
-                 <div className="flex gap-2">
-                    <Button onClick={handleSetData} variant="secondary" size="sm" className="flex-grow">Set Graph</Button>
-                     <Button onClick={initializeGraph} variant="outline" size="sm">
-                         <GraphIcon className="mr-2 h-4 w-4" /> Random
-                     </Button>
-                 </div>
-            </div>
+             // Graph controls (delegated to GraphEditor, plus start node selection)
+              <>
+                  <Button onClick={() => initializeGraph()} variant="outline" size="sm" className="w-full">
+                      <ShuffleIcon className="mr-2 h-4 w-4" /> Generate Random Graph
+                  </Button>
+
+                 {algorithmId === 'prims-algorithm' && (
+                   <div className="space-y-2">
+                     <Label htmlFor="start-node-select">Start Node (Prim's)</Label>
+                     <Select
+                        value={startNode !== null ? startNode.toString() : ""}
+                        onValueChange={handleStartNodeChange}
+                        disabled={graph.nodes.length === 0}
+                     >
+                       <SelectTrigger id="start-node-select" className="w-full">
+                         <SelectValue placeholder="Select start node..." />
+                       </SelectTrigger>
+                       <SelectContent>
+                           {graph.nodes.length > 0 ? (
+                                graph.nodes.map(node => (
+                                    <SelectItem key={node.id} value={node.id.toString()}>
+                                        Node {node.id}
+                                    </SelectItem>
+                                ))
+                            ) : (
+                                <SelectItem value="" disabled>No nodes available</SelectItem>
+                            )
+                           }
+                       </SelectContent>
+                     </Select>
+                   </div>
+                 )}
+             </>
           ) : (
              // Array and Target Inputs
             <>
@@ -646,7 +772,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                     placeholder="e.g., 5, 3, 8, 1, 9"
                     className="flex-grow"
                   />
-                  <Button onClick={handleSetData} variant="secondary" size="sm">Set</Button>
+                  <Button onClick={handleSetArrayData} variant="secondary" size="sm">Set</Button>
                 </div>
                 <Button onClick={() => generateRandomArray(array.length || DEFAULT_ARRAY_SIZE)} variant="outline" size="sm" className="w-full">
                   <ShuffleIcon className="mr-2 h-4 w-4" /> Randomize Array
@@ -666,7 +792,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                     max="100"
                   />
                   {algorithmId === 'binary-search' && (
-                    <p className="text-xs text-muted-foreground">(Input array will be sorted automatically if needed)</p>
+                    <p className="text-xs text-muted-foreground">(Input array will be sorted if necessary)</p>
                   )}
                 </div>
               )}
@@ -693,17 +819,15 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
           </div>
 
           {/* Playback Controls */}
-          <div className="flex justify-center space-x-2 mt-4">
-            <Button onClick={handlePlayPause} variant="default" size="icon" aria-label={isPlaying ? "Pause" : "Play/Restart"}>
-              {isPlaying ? <Pause className="h-5 w-5"/> : <Play className="h-5 w-5"/>}
-            </Button>
-            <Button onClick={handleReset} variant="outline" size="icon" aria-label="Reset">
-              <RotateCcw className="h-5 w-5"/>
-            </Button>
-             {/* Add Previous/Next Step Buttons? */}
-              {/* <Button onClick={() => setCurrentStepIndex(s => Math.max(0, s - 1))} variant="outline" size="icon" disabled={currentStepIndex === 0 || isPlaying}><Minus className="h-5 w-5"/></Button>
-             <Button onClick={() => setCurrentStepIndex(s => Math.min(steps.length -1 , s + 1))} variant="outline" size="icon" disabled={currentStepIndex >= steps.length -1 || isPlaying}><Plus className="h-5 w-5"/></Button> */}
-          </div>
+           <div className="flex items-center justify-center space-x-2 mt-4">
+              <Button onClick={handlePlayPause} variant="default" size="icon" aria-label={isPlaying ? "Pause" : (steps.length > 0 ? "Play/Restart" : "Start")}>
+                   {isPlaying ? <Pause className="h-5 w-5"/> : <Play className="h-5 w-5"/>}
+               </Button>
+               <Button onClick={handleReset} variant="outline" size="icon" aria-label="Reset Visualization">
+                   <RotateCcw className="h-5 w-5"/>
+               </Button>
+                {/* Add Previous/Next Step Buttons if desired */}
+           </div>
         </CardContent>
       </Card>
 
@@ -713,26 +837,55 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
             <CardHeader>
                 <CardTitle>Visualization</CardTitle>
                 <CardDescription className={cn("transition-opacity duration-300 min-h-[1.2em]", steps.length > 0 ? 'opacity-100' : 'opacity-50')}>
-                     {/* Use a non-breaking space or min-height to prevent layout shift */}
-                     {currentExplanation || '\u00A0'}
+                     {currentExplanation || '\u00A0'} {/* Non-breaking space */}
                 </CardDescription>
             </CardHeader>
-            <CardContent className="aspect-[2/1] p-0 overflow-hidden relative"> {/* Maintain aspect ratio */}
-                 <canvas
-                    ref={canvasRef}
-                    width="800" // Intrinsic width
-                    height="400" // Intrinsic height
-                    className="absolute top-0 left-0 w-full h-full bg-muted/30 rounded-b-lg border-t"
-                 ></canvas>
-            </CardContent>
+             {/* Conditional Rendering: Canvas for Arrays, GraphEditor for Graphs */}
+             {isGraphCategory ? (
+                 <CardContent className="aspect-[2/1] p-0 overflow-hidden relative">
+                    <GraphEditor
+                        graph={graph}
+                        onGraphChange={handleGraphChange}
+                        width={800} // Intrinsic width, adjust as needed
+                        height={400} // Intrinsic height, adjust as needed
+                        readOnly={isPlaying} // Make editor read-only during visualization
+                        // Pass drawing state from AlgorithmVisualizer to GraphEditor if needed
+                        // e.g., mstEdges={isGraphStep(currentStepData) ? currentStepData.mstEdges : []}
+                        // highlightedNodes={...} etc.
+                        // This requires GraphEditor to accept and use these props for drawing overlays.
+                        // FOR NOW: GraphEditor handles editing, Canvas below handles visualization drawing.
+                    />
+                    {/* Overlay Canvas for visualization steps */}
+                     <canvas
+                        ref={canvasRef}
+                        width="800"
+                        height="400"
+                        className={cn(
+                            "absolute top-0 left-0 w-full h-full pointer-events-none", // Pointer events none so editor below is interactive
+                             isPlaying ? "bg-muted/10" : "bg-transparent" // Slight overlay during playback
+                             )}
+                     ></canvas>
+                 </CardContent>
+             ) : (
+                 // Original Canvas for Array Visualizations
+                 <CardContent className="aspect-[2/1] p-0 overflow-hidden relative">
+                     <canvas
+                        ref={canvasRef}
+                        width="800"
+                        height="400"
+                        className="absolute top-0 left-0 w-full h-full bg-muted/30 rounded-b-lg border-t"
+                     ></canvas>
+                 </CardContent>
+             )}
+
          </Card>
          {/* Optional: DSU State Visualization for Kruskal's */}
-         {algorithmId === 'kruskals-algorithm' && isGraphStep(steps[currentStepIndex] || {}) && steps[currentStepIndex]?.dsuState && (
+         {algorithmId === 'kruskals-algorithm' && isGraphStep(currentStepData || {}) && currentStepData?.dsuState && (
              <Card>
                  <CardHeader><CardTitle className="text-lg">Disjoint Set State</CardTitle></CardHeader>
-                 <CardContent className="text-xs overflow-x-auto">
-                     <pre>Parent: {JSON.stringify(steps[currentStepIndex].dsuState?.parent)}</pre>
-                     <pre>Rank:   {JSON.stringify(steps[currentStepIndex].dsuState?.rank)}</pre>
+                 <CardContent className="text-xs overflow-x-auto bg-muted/50 p-2 rounded">
+                     <pre className="font-mono">Parent: {JSON.stringify(currentStepData.dsuState?.parent)}</pre>
+                     <pre className="font-mono">Rank:   {JSON.stringify(currentStepData.dsuState?.rank)}</pre>
                  </CardContent>
              </Card>
          )}

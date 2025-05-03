@@ -34,11 +34,12 @@ export type ArrayAlgorithmStep = {
 export type GraphAlgorithmStep = {
   graph: Graph; // Includes nodes and all edges
   mstEdges: Edge[]; // Edges currently part of the MST
-  highlightedNodes?: number[]; // Node IDs to highlight
+  highlightedNodes?: number[]; // Node IDs to highlight for this specific step
   highlightedEdges?: string[]; // Edge IDs to highlight (using edge.id)
   candidateEdge?: Edge; // Edge being considered (e.g., in Kruskal's/Prim's)
   message: string;
   dsuState?: { parent: Record<number, number>; rank: Record<number, number> }; // Optional: For visualizing DSU in Kruskal's
+  startNodeId?: number; // Optional: To persistently highlight the start node in Prim's
 };
 
 // Union type for steps (can be refined if needed)
@@ -46,10 +47,14 @@ export type AlgorithmStep = ArrayAlgorithmStep | GraphAlgorithmStep;
 
 // Type guard to check if a step is for a graph algorithm
 export function isGraphStep(step: AlgorithmStep): step is GraphAlgorithmStep {
-  return (step as GraphAlgorithmStep).graph !== undefined;
+  // Check for graph property and potentially other graph-specific optional properties
+  // Check if graph property exists and is an object
+  return typeof (step as GraphAlgorithmStep).graph === 'object' && (step as GraphAlgorithmStep).graph !== null;
 }
+
 
 // Type guard to check if a step is for an array algorithm
 export function isArrayStep(step: AlgorithmStep): step is ArrayAlgorithmStep {
-    return (step as ArrayAlgorithmStep).array !== undefined;
+    // Check if array property exists and is an array
+    return Array.isArray((step as ArrayAlgorithmStep).array);
 }
