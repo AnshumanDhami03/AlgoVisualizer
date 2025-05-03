@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -70,17 +71,18 @@ export default function AlgorithmSelector() {
 
   return (
     <Select onValueChange={handleValueChange} value={selectValue}>
-      <SelectTrigger className="w-[220px] bg-secondary text-secondary-foreground border-secondary hover:bg-secondary/90">
+      {/* Adjusted width for responsiveness */}
+      <SelectTrigger className="w-full max-w-[180px] sm:max-w-[220px] bg-secondary text-secondary-foreground border-secondary hover:bg-secondary/90 text-xs sm:text-sm">
         <SelectValue placeholder="Select Algorithm" />
       </SelectTrigger>
       <SelectContent>
         {Object.entries(ALGORITHMS_DATA).map(([categoryKey, categoryData]) => (
           <SelectGroup key={categoryKey}>
-            <SelectLabel className="flex items-center gap-2">
+            <SelectLabel className="flex items-center gap-2 text-xs font-semibold"> {/* Reduced font size */}
               <categoryData.icon className="h-4 w-4" /> {categoryData.label}
             </SelectLabel>
             {categoryData.algorithms.map((algo) => (
-              <SelectItem key={`${categoryKey}-${algo.value}`} value={`/${categoryKey}/${algo.value}`}>
+              <SelectItem key={`${categoryKey}-${algo.value}`} value={`/${categoryKey}/${algo.value}`} className="text-xs sm:text-sm"> {/* Responsive text size */}
                 {algo.label}
               </SelectItem>
             ))}
@@ -90,3 +92,5 @@ export default function AlgorithmSelector() {
     </Select>
   );
 }
+
+    

@@ -1,3 +1,4 @@
+
 // src/components/algorithm/graph-editor.tsx
 "use client";
 
@@ -24,26 +25,28 @@ import type { GraphEditorMode } from './algorithm-visualizer';
 interface GraphEditorProps {
     graph: Graph;
     onGraphChange: (newGraph: Graph) => void;
-    width: number;
-    height: number;
+    // width: number; // Removed fixed width
+    // height: number; // Removed fixed height
     readOnly?: boolean;
     mode: GraphEditorMode;
     onSetStartNode: (nodeId: number) => void;
 }
 
-const NODE_RADIUS = 22;
+const NODE_RADIUS = 18; // Use consistent node radius
 const EDGE_HIT_WIDTH = 8;
 
 const GraphEditor: React.FC<GraphEditorProps> = ({
     graph,
     onGraphChange,
-    width,
-    height,
+    // width, // Removed
+    // height, // Removed
     readOnly = false,
     mode,
     onSetStartNode,
 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null); // Ref for the container div
+    const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 }); // State for canvas dimensions
     const [nodes, setNodes] = useState<Node[]>(graph.nodes);
     const [edges, setEdges] = useState<Edge[]>(graph.edges);
     const [draggingNodeId, setDraggingNodeId] = useState<number | null>(null);
@@ -70,6 +73,37 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
         setEditingEdge(null);
     }, [graph]);
 
+    // Effect to handle canvas resizing
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        const container = containerRef.current;
+        if (!canvas || !container) return;
+
+        const resizeObserver = new ResizeObserver(entries => {
+            for (let entry of entries) {
+                const { width, height } = entry.contentRect;
+                 // Set state to trigger redraw with new dimensions
+                setCanvasSize({ width, height });
+                 // Directly set canvas attributes for immediate rendering resolution
+                canvas.width = width;
+                canvas.height = height;
+            }
+        });
+
+        resizeObserver.observe(container);
+
+        // Initial size setting
+        const initialWidth = container.clientWidth;
+        const initialHeight = container.clientHeight;
+        setCanvasSize({ width: initialWidth, height: initialHeight });
+        canvas.width = initialWidth;
+        canvas.height = initialHeight;
+
+
+        return () => resizeObserver.disconnect();
+    }, []); // Run only on mount
+
+
     // Function to call onGraphChange when internal state changes
     const triggerGraphChange = useCallback((updatedNodes: Node[], updatedEdges: Edge[]) => {
         onGraphChange({ nodes: updatedNodes, edges: updatedEdges });
@@ -78,9 +112,11 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
     // Draw function
     const draw = useCallback(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas || canvasSize.width === 0 || canvasSize.height === 0) return; // Don't draw if size is 0
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
+
+        const { width, height } = canvasSize; // Use state for dimensions
 
         const computedStyle = getComputedStyle(document.documentElement);
         const primaryColor = computedStyle.getPropertyValue('--primary').trim();
@@ -103,7 +139,7 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
             ctx.beginPath();
             ctx.moveTo(sourceNode.x, sourceNode.y);
             ctx.lineTo(targetNode.x, targetNode.y);
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 1.5; // Consistent edge width
             ctx.strokeStyle = editingEdge?.id === edge.id ? `hsl(${accentColor})` : `hsla(${mutedFgColor}, 0.5)`;
             ctx.globalAlpha = editingEdge?.id === edge.id ? 1.0 : 0.5;
             ctx.stroke();
@@ -112,18 +148,20 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
             // Draw edge weight
             const midX = (sourceNode.x + targetNode.x) / 2;
             const midY = (sourceNode.y + targetNode.y) / 2;
-            ctx.font = 'bold 12px Arial';
+            ctx.font = 'bold 11px Arial'; // Smaller font
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
              const angle = Math.atan2(targetNode.y - sourceNode.y, targetNode.x - sourceNode.x);
-            const offsetX = Math.sin(angle) * 15;
-            const offsetY = -Math.cos(angle) * 15;
+             const offsetDist = 12; // Offset distance
+            const offsetX = Math.sin(angle) * offsetDist;
+            const offsetY = -Math.cos(angle) * offsetDist;
              const text = edge.weight.toString();
              const textWidth = ctx.measureText(text).width;
+             const textHeight = 10; // Approx text height
 
             ctx.fillStyle = `hsl(${backgroundColor})`;
             ctx.globalAlpha = 0.9;
-            ctx.fillRect(midX + offsetX - textWidth / 2 - 4, midY + offsetY - 10, textWidth + 8, 14);
+            ctx.fillRect(midX + offsetX - textWidth / 2 - 3, midY + offsetY - textHeight - 1, textWidth + 6, textHeight + 2);
             ctx.fillStyle = ctx.strokeStyle; // Use edge color for weight text
             ctx.globalAlpha = 1.0;
             ctx.fillText(text, midX + offsetX, midY + offsetY);
@@ -136,7 +174,7 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
                 ctx.beginPath();
                 ctx.moveTo(sourceNode.x, sourceNode.y);
                 ctx.lineTo(drawingEdge.x, drawingEdge.y);
-                ctx.lineWidth = 2;
+                ctx.lineWidth = 1.5;
                 ctx.strokeStyle = `hsl(${primaryColor})`;
                 ctx.globalAlpha = 0.7;
                 ctx.setLineDash([5, 5]);
@@ -188,18 +226,18 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
 
              // Text styling (same as stroke color)
             ctx.fillStyle = strokeStyle;
-            ctx.font = 'bold 15px Arial';
+            ctx.font = 'bold 13px Arial'; // Smaller font
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(node.id.toString(), node.x, node.y);
         });
-    // Depend on internal state variables that affect drawing AND mode, isMobile, firstNodeForEdge
-    }, [nodes, edges, draggingNodeId, drawingEdge, width, height, editingEdge, mode, isMobile, firstNodeForEdge]);
+    // Depend on internal state variables that affect drawing AND mode, isMobile, firstNodeForEdge, and canvasSize
+    }, [nodes, edges, draggingNodeId, drawingEdge, editingEdge, mode, isMobile, firstNodeForEdge, canvasSize]);
 
     // Effect to redraw canvas when relevant state changes
     useEffect(() => {
         draw();
-    }, [draw]);
+    }, [draw]); // Draw depends on canvasSize now, so this covers resize redraws
 
      const getMousePos = (event: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>): { x: number; y: number } => {
         const canvas = canvasRef.current;
@@ -216,9 +254,13 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
             clientY = event.clientY;
         }
 
+        // Adjust for canvas scaling if necessary (though clientRect should handle this)
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+
         return {
-            x: clientX - rect.left,
-            y: clientY - rect.top,
+             x: (clientX - rect.left) * scaleX,
+             y: (clientY - rect.top) * scaleY,
         };
     };
 
@@ -273,8 +315,8 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
                 setDraggingNodeId(clickedNode.id); // Allow dragging in node mode (works for touch drag too)
                 if ('touches' in event) event.preventDefault(); // Prevent scrolling on touch drag
             } else {
-                 // Add node only if clicking empty space
-                 if (!clickedEdge && x > NODE_RADIUS && x < width - NODE_RADIUS && y > NODE_RADIUS && y < height - NODE_RADIUS) {
+                 // Add node only if clicking empty space within bounds
+                 if (!clickedEdge && x > NODE_RADIUS && x < canvasSize.width - NODE_RADIUS && y > NODE_RADIUS && y < canvasSize.height - NODE_RADIUS) {
                      const newNode: Node = { id: nextNodeId, x, y };
                      const updatedNodes = [...nodes, newNode];
                      setNodes(updatedNodes);
@@ -319,7 +361,7 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
              if (clickedNode) {
                 onSetStartNode(clickedNode.id); // Call parent handler
              } else {
-                  toast({ title: "Select a Node", description: "Click directly on a node to set it as the source.", variant:"default" });
+                  toast({ title: "Select a Node", description: "Click/Tap directly on a node to set it as the source.", variant:"default" });
              }
         }
     };
@@ -332,8 +374,8 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
         // Only move node if in 'node' mode and dragging a node
         if (mode === 'node' && draggingNodeId !== null) {
              if ('touches' in event) event.preventDefault(); // Prevent scrolling on touch drag
-            const boundedX = Math.max(NODE_RADIUS, Math.min(width - NODE_RADIUS, x));
-            const boundedY = Math.max(NODE_RADIUS, Math.min(height - NODE_RADIUS, y));
+            const boundedX = Math.max(NODE_RADIUS, Math.min(canvasSize.width - NODE_RADIUS, x));
+            const boundedY = Math.max(NODE_RADIUS, Math.min(canvasSize.height - NODE_RADIUS, y));
             const updatedNodes = nodes.map(node =>
                 node.id === draggingNodeId ? { ...node, x: boundedX, y: boundedY } : node
             );
@@ -349,7 +391,11 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
      // Combined handler for mouse up and touch end
     const handlePointerUp = (event: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
         if (readOnly) return;
-        const { x, y } = getMousePos(event); // Use adjusted position if needed (e.g., for touchEnd)
+        // Use adjusted position if needed (e.g., for touchEnd which doesn't have coordinates in the event)
+        // For simplicity, we might use the last known coordinates or rely on the click handler for mobile taps.
+        // Let's assume getMousePos works reasonably well for mouseup. Touch tap logic is in handlePointerDown.
+        const { x, y } = getMousePos(event as React.MouseEvent<HTMLCanvasElement>);
+
 
         // Finalize edge drawing only in 'edge' mode on DESKTOP
         if (mode === 'edge' && drawingEdge && !isMobile) {
@@ -374,9 +420,13 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
         // Deselect edge if clicking empty space on mouse up (relevant in edge mode)
         // Keep selected edge if modal opens. Reset firstNodeForEdge on mobile if tapping empty.
         if (mode === 'edge') {
-             if (!isWeightModalOpen && !getNodeAtPos(x,y) && !getEdgeAtPos(x,y)){
+             // Check if clicking empty space (not on node or edge)
+             const clickedNode = getNodeAtPos(x, y);
+             const clickedEdge = getEdgeAtPos(x, y);
+             if (!isWeightModalOpen && !clickedNode && !clickedEdge){
                  setEditingEdge(null);
-                 if (isMobile) setFirstNodeForEdge(null); // Reset mobile selection on empty tap
+                 // Reset mobile selection only if NOT clicking a node (handled in pointerDown)
+                 if (isMobile && !clickedNode) setFirstNodeForEdge(null);
              }
         }
     };
@@ -392,11 +442,12 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
              setPendingEdge({ source: sourceId, target: targetId });
              setNewEdgeWeight('1'); // Reset to default weight
              setIsWeightModalOpen(true);
+             setEditingEdge(null); // Ensure editingEdge is cleared when starting a new edge
          } else {
               toast({ title: "Edge Exists", description: `Edge between node ${sourceId} and ${targetId} already exists.`, variant: "destructive" });
+              if (isMobile) setFirstNodeForEdge(null); // Reset mobile selection if edge exists
          }
-          // Reset mobile selection after attempting edge creation
-         if (isMobile) setFirstNodeForEdge(null);
+          // Don't reset firstNodeForEdge here, do it after modal confirmation/cancel
     }
 
 
@@ -420,7 +471,7 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
         setIsWeightModalOpen(false);
         setPendingEdge(null);
         triggerGraphChange(nodes, updatedEdges); // Propagate change
-         // Reset mobile selection after attempting edge creation - Moved here
+         // Reset mobile selection AFTER successful edge creation
          if (isMobile) setFirstNodeForEdge(null);
     };
 
@@ -475,7 +526,7 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
          setEditingEdge(edge);
          setNewEdgeWeight(edge.weight.toString());
          setIsWeightModalOpen(true);
-         setPendingEdge(null);
+         setPendingEdge(null); // Clear pending edge if editing
          setFirstNodeForEdge(null); // Ensure mobile selection is reset
      };
 
@@ -489,7 +540,7 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
                 case 'set-source':
                     return 'cursor-pointer';
                 case 'node':
-                    return 'cursor-default'; // Or maybe 'grab' if you want to indicate movability
+                    return 'cursor-grab'; // Use grab cursor to indicate movability on tap/drag
                 default:
                     return 'cursor-default';
             }
@@ -506,17 +557,18 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
 
 
     return (
-        <div className="relative w-full h-full border rounded-md overflow-hidden bg-background touch-none"> {/* Added touch-none */}
+        // Container div to manage canvas size
+        <div ref={containerRef} className="relative w-full h-full border rounded-md overflow-hidden bg-background touch-none">
             {!readOnly && (
-                <div className={cn(
-                    "absolute top-2 left-2 z-20 p-1.5 bg-background/80 border border-border rounded text-xs text-muted-foreground max-w-[calc(100%-1rem)] sm:max-w-[250px]", // Adjusted max-width
+                 <div className={cn(
+                    "absolute top-2 left-2 z-20 p-1.5 bg-background/80 border border-border rounded text-xs text-muted-foreground max-w-[calc(100%-1rem)] sm:max-w-none sm:w-auto", // Allow full width on small screens
                     "transition-opacity duration-300",
                      // Hide hint if interacting or modal is open
                      (drawingEdge || draggingNodeId || firstNodeForEdge || isWeightModalOpen || editingEdge || mode === 'set-source') ? "opacity-0 pointer-events-none" : "opacity-100"
                      )}>
-                    {mode === 'node' && "Click: Add Node | Drag: Move Node"}
+                    {mode === 'node' && (isMobile ? "Tap: Add | Hold & Drag: Move" : "Click: Add Node | Drag: Move Node")}
                     {mode === 'edge' && (isMobile ? "Tap Node: Select | Tap 2nd Node: Add Edge" : "Drag between Nodes: Add Edge | Click Edge: Edit/Delete")}
-                    {mode === 'set-source' && "Click on a Node to set as Source"}
+                    {mode === 'set-source' && "Click/Tap on a Node to set as Source"}
                  </div>
             )}
             {isMobile && mode === 'edge' && firstNodeForEdge && (
@@ -527,8 +579,7 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
 
             <canvas
                 ref={canvasRef}
-                width={width}
-                height={height}
+                // width and height are set dynamically via JS
                 onMouseDown={handlePointerDown}
                 onMouseMove={handlePointerMove}
                 onMouseUp={handlePointerUp}
@@ -545,7 +596,7 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
                       }
                 }}
                 className={cn(
-                    "block",
+                    "absolute top-0 left-0 block w-full h-full", // Make canvas fill container
                     getCursorStyle() // Apply dynamic cursor style
                 )}
             />
@@ -613,7 +664,7 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
                         <DialogClose asChild>
                              <Button variant="outline">Cancel</Button>
                          </DialogClose>
-                         <Button onClick={editingEdge ? handleUpdateWeight : handleConfirmWeight} disabled={pendingEdge === null}>
+                         <Button onClick={editingEdge ? handleUpdateWeight : handleConfirmWeight} disabled={!editingEdge && !pendingEdge}> {/* Simplified disabled check */}
                            {editingEdge ? <><Check className="mr-2 h-4 w-4"/> Update</> : <><Check className="mr-2 h-4 w-4"/> Add Edge</>}
                          </Button>
                     </DialogFooter>
@@ -624,3 +675,5 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
 };
 
 export default GraphEditor;
+
+    

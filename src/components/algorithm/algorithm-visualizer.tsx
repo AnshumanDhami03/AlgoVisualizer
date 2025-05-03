@@ -16,6 +16,7 @@ import type { AlgorithmStep, ArrayAlgorithmStep, GraphAlgorithmStep, Graph, Node
 import { isGraphStep, isArrayStep } from '@/lib/types';
 import GraphEditor from './graph-editor';
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group" // Import ToggleGroup
+import { useIsMobile } from '@/hooks/use-mobile'; // Import hook
 
 // Array Algorithm Implementations
 import { getBubbleSortSteps } from "@/lib/algorithms/sorting/bubbleSort";
@@ -47,11 +48,9 @@ const MAX_SPEED = 1000; // ms
 const DEFAULT_SPEED = 300; // ms
 
 // Constants for Graph Visualization/Editor
-const GRAPH_CANVAS_WIDTH = 800;
-const GRAPH_CANVAS_HEIGHT = 400;
-const NODE_RADIUS = 22;
-const EDGE_WIDTH = 2;
-const MST_EDGE_WIDTH = 4;
+const NODE_RADIUS = 18; // Slightly smaller node radius for better spacing
+const EDGE_WIDTH = 1.5; // Slightly thinner edge
+const MST_EDGE_WIDTH = 3; // Slightly thinner MST edge
 const START_NODE_COLOR = "hsl(var(--accent))";
 const PIVOT_COLOR = "#E91E63";
 const TARGET_POTENTIAL_COLOR = "#FFC107";
@@ -77,15 +76,14 @@ const ALGORITHM_MAP: Record<string, Record<string, Function>> = {
 
 export type GraphEditorMode = 'node' | 'edge' | 'set-source';
 
-
 // Helper to generate a random graph, ensuring connectivity
-const generateRandomGraph = (numNodes = 7, edgeDensity = 0.35): Graph => {
+const generateRandomGraph = (numNodes = 7, edgeDensity = 0.35, canvasWidth = 800, canvasHeight = 400): Graph => {
     const nodes: Node[] = [];
     const edges: Edge[] = [];
-    const canvasWidth = GRAPH_CANVAS_WIDTH;
-    const canvasHeight = GRAPH_CANVAS_HEIGHT;
+    // const canvasWidth = GRAPH_CANVAS_WIDTH; // Use passed dimensions
+    // const canvasHeight = GRAPH_CANVAS_HEIGHT;
     const padding = NODE_RADIUS * 3; // Padding around edges
-    const minNodeDistance = NODE_RADIUS * 5.5; // Increased minimum distance between nodes
+    const minNodeDistance = NODE_RADIUS * 6; // Increased minimum distance between nodes
 
     // Generate node positions, trying to space them out
     for (let i = 0; i < numNodes; i++) {
@@ -194,7 +192,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
   // State for Graph Algorithms
   const [editorGraph, setEditorGraph] = useState<Graph>({ nodes: [], edges: [] }); // Editor starts empty
-  const [visualizerGraph, setVisualizerGraph] = useState<Graph>(generateRandomGraph()); // Visualizer starts with random graph
+  const [visualizerGraph, setVisualizerGraph] = useState<Graph>(() => generateRandomGraph()); // Visualizer starts with random graph
   const [startNode, setStartNode] = useState<number | null>(null);
   const [editorMode, setEditorMode] = useState<GraphEditorMode>('node'); // State for editor mode
 
@@ -204,10 +202,43 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [speed, setSpeed] = useState<number>(DEFAULT_SPEED);
   const [isUsingEditorGraph, setIsUsingEditorGraph] = useState<boolean>(false); // Track which graph source is used for visualization
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const visualizationCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [visCanvasSize, setVisCanvasSize] = useState({ width: 800, height: 400 });
+  const visualizationContainerRef = useRef<HTMLDivElement>(null); // Ref for container
   const timeoutId = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
+  const isMobile = useIsMobile();
 
+
+  // --- Dynamic Canvas Sizing for Visualization Canvas ---
+  useEffect(() => {
+    const canvas = visualizationCanvasRef.current;
+    const container = visualizationContainerRef.current;
+    if (!canvas || !container) return;
+
+    const resizeObserver = new ResizeObserver(entries => {
+      for (let entry of entries) {
+        const { width, height } = entry.contentRect;
+         // Set state to trigger redraw with new dimensions
+        setVisCanvasSize({ width, height });
+         // Directly set canvas attributes for immediate rendering resolution
+        canvas.width = width;
+        canvas.height = height;
+      }
+    });
+
+    resizeObserver.observe(container);
+
+    // Initial size setting
+    const initialWidth = container.clientWidth;
+    const initialHeight = container.clientHeight;
+    setVisCanvasSize({ width: initialWidth, height: initialHeight });
+    canvas.width = initialWidth;
+    canvas.height = initialHeight;
+
+
+    return () => resizeObserver.disconnect();
+  }, []);
 
   // --- Drawing Functions ---
 
@@ -219,22 +250,22 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
         target?: number,
         foundIndex?: number
         ) => {
-    const canvas = canvasRef.current;
+    const canvas = visualizationCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const { width, height } = canvas;
+    const { width, height } = visCanvasSize; // Use dynamic canvas size
     ctx.clearRect(0, 0, width, height);
 
     const n = currentArrayState.length;
     if (n === 0) return;
 
-    const spacing = 5;
+    const spacing = 4; // Reduce spacing slightly for smaller screens
     const totalSpacing = (n + 1) * spacing;
     const availableWidth = width - totalSpacing;
     const barWidth = Math.max(1, availableWidth / n);
-    const maxVal = Math.max(...currentArrayState, 1);
+    const maxVal = Math.max(...currentArrayState, 1); // Ensure maxVal is at least 1
 
     const computedStyle = getComputedStyle(document.documentElement);
     const primaryColor = computedStyle.getPropertyValue('--primary').trim();
@@ -245,7 +276,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
     currentArrayState.forEach((value, index) => {
       const barHeight = Math.max(1, (value / maxVal) * (height * 0.85));
       const x = spacing + index * (barWidth + spacing);
-      const y = height - barHeight - 20;
+      const y = height - barHeight - 20; // Position bars at the bottom
 
       if (foundIndex === index) ctx.fillStyle = `hsl(${accentColor})`;
       else if (target === value && category === 'search' && !sortedIndices.includes(index)) ctx.fillStyle = TARGET_POTENTIAL_COLOR;
@@ -256,14 +287,15 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
       ctx.fillRect(x, y, barWidth, barHeight);
 
-      if (barWidth > 15) {
+       // Draw value text only if bar width is sufficient
+       if (barWidth > 15) {
           ctx.fillStyle = `hsl(${foregroundColor})`;
           ctx.textAlign = "center";
           ctx.font = "12px Arial";
           ctx.fillText(value.toString(), x + barWidth / 2, height - 5);
       }
     });
-  }, [category]);
+  }, [category, visCanvasSize]);
 
 
     const drawGraphVisualization = useCallback((
@@ -274,12 +306,12 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
         candidateEdge?: Edge,
         persistentStartNodeId?: number
     ) => {
-        const canvas = canvasRef.current;
-        if (!canvas || !graphData) return; // Add check for graphData
+        const canvas = visualizationCanvasRef.current;
+        if (!canvas || !graphData || graphData.nodes.length === 0) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        const { width, height } = canvas;
+        const { width, height } = visCanvasSize; // Use dynamic canvas size
         ctx.clearRect(0, 0, width, height);
 
         const computedStyle = getComputedStyle(document.documentElement);
@@ -345,20 +377,22 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
             // Draw edge weight
             const midX = (sourceNode.x + targetNode.x) / 2;
             const midY = (sourceNode.y + targetNode.y) / 2;
-            ctx.font = 'bold 12px Arial';
+            ctx.font = 'bold 11px Arial'; // Slightly smaller font for weight
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
             // Angle calculation to offset weight text slightly from the edge line
             const angle = Math.atan2(targetNode.y - sourceNode.y, targetNode.x - sourceNode.x);
-            const offsetX = Math.sin(angle) * 15; // Offset perpendicular to edge
-            const offsetY = -Math.cos(angle) * 15;
+            const offsetDist = 12; // Distance to offset text
+            const offsetX = Math.sin(angle) * offsetDist; // Offset perpendicular to edge
+            const offsetY = -Math.cos(angle) * offsetDist;
             const text = edge.weight.toString();
             const textWidth = ctx.measureText(text).width;
+            const textHeight = 10; // Approximate height
 
             // Draw a small background rectangle behind the text for better visibility
             ctx.fillStyle = `hsl(${backgroundColor})`;
             ctx.globalAlpha = 0.9;
-            ctx.fillRect(midX + offsetX - textWidth/2 - 4, midY + offsetY - 10, textWidth + 8, 14);
+            ctx.fillRect(midX + offsetX - textWidth/2 - 3, midY + offsetY - textHeight - 1, textWidth + 6, textHeight + 2);
              ctx.fillStyle = edgeColor; // Use the edge's color for the text
              ctx.globalAlpha = 1.0; // Reset alpha
             ctx.fillText(text, midX + offsetX, midY + offsetY);
@@ -404,14 +438,13 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
             // Draw Node ID Text
             ctx.fillStyle = strokeColor; // Use the stroke color for the text for contrast
-            ctx.font = 'bold 15px Arial';
+            ctx.font = 'bold 13px Arial'; // Slightly smaller font for node ID
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(node.id.toString(), node.x, node.y);
         });
 
-    }, []); // Removed category dependency
-
+    }, [visCanvasSize]); // Depend on dynamic canvas size
 
  // Define resetVisualization using useCallback BEFORE it's used as a dependency
  // Modified resetVisualization to accept an optional graph to draw initially
@@ -424,29 +457,37 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
     const activeGraph = graphToDraw ?? (isUsingEditorGraph ? editorGraph : visualizerGraph);
 
+    // Use requestAnimationFrame to ensure drawing happens after state updates
     requestAnimationFrame(() => {
-        if (category === 'graph' && activeGraph && activeGraph.nodes.length > 0) { // Check activeGraph has nodes
-            let persistentStartId: number | undefined = undefined;
-            if (algorithmId === 'prims-algorithm') {
-                 // Use the state's startNode if valid within the active graph, otherwise default
-                 if (startNode !== null && activeGraph.nodes.some(n => n.id === startNode)) {
-                     persistentStartId = startNode;
-                 } else if (activeGraph.nodes.length > 0) {
-                     persistentStartId = activeGraph.nodes[0].id; // Fallback to first node
-                 }
+        const canvas = visualizationCanvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        if (category === 'graph') {
+            if (activeGraph && activeGraph.nodes.length > 0) {
+                let persistentStartId: number | undefined = undefined;
+                if (algorithmId === 'prims-algorithm') {
+                    if (startNode !== null && activeGraph.nodes.some(n => n.id === startNode)) {
+                        persistentStartId = startNode;
+                    } else if (activeGraph.nodes.length > 0) {
+                         persistentStartId = activeGraph.nodes[0].id; // Fallback to first node
+                    }
+                }
+                drawGraphVisualization(activeGraph, [], [], [], undefined, persistentStartId);
+            } else {
+                // Clear canvas if graph is empty
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
             }
-           drawGraphVisualization(activeGraph, [], [], [], undefined, persistentStartId);
-        } else if (category === 'sort' || category === 'search'){ // Only draw array if relevant category
-           drawArray(array);
-        } else if (category === 'graph' && (!activeGraph || activeGraph.nodes.length === 0)) {
-             // Clear canvas if graph is empty
-             const canvas = canvasRef.current;
-             if (canvas) {
-                 const ctx = canvas.getContext('2d');
-                 if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-             }
+        } else if (category === 'sort' || category === 'search') { // Only draw array if relevant category
+           if (array && array.length > 0) {
+               drawArray(array);
+           } else {
+                ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear if array empty
+           }
         }
-      });
+    });
+
   }, [category, array, editorGraph, visualizerGraph, isUsingEditorGraph, startNode, algorithmId, drawArray, drawGraphVisualization]); // Include drawArray/Graph dependencies
 
 
@@ -462,13 +503,14 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
    // Generates a new random graph ONLY for the visualizer
    const initializeRandomGraphForVisualizer = useCallback(() => {
-        const randomGraph = generateRandomGraph();
+        // Use current canvas size to generate graph
+        const randomGraph = generateRandomGraph(isMobile ? 5 : 7, 0.35, visCanvasSize.width, visCanvasSize.height);
         setVisualizerGraph(randomGraph);
         // Automatically select the first node as the default start node if available
         setStartNode(randomGraph.nodes.length > 0 ? randomGraph.nodes[0].id : null);
         resetVisualization(randomGraph); // Pass the new graph to reset
         setIsUsingEditorGraph(false); // Indicate we are using the random graph
-    }, [resetVisualization]);
+    }, [resetVisualization, visCanvasSize.width, visCanvasSize.height, isMobile]);
 
     // Clears the graph editor workspace
    const clearGraphWorkspace = useCallback(() => {
@@ -488,7 +530,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
     } else if (category === 'graph') {
        // Keep editor empty, initialize visualizer with random
        setEditorGraph({ nodes: [], edges: [] });
-       initializeRandomGraphForVisualizer();
+       initializeRandomGraphForVisualizer(); // Generates graph based on initial canvas size
        setEditorMode('node'); // Default to node mode
        // Reset start node mode availability based on algorithm
         if (algorithmId !== 'prims-algorithm' && editorMode === 'set-source') {
@@ -787,14 +829,21 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                     drawGraphVisualization(activeGraph, [], [], [], undefined, persistentStartId);
                 } else {
                     // Clear canvas if graph is empty
-                     const canvas = canvasRef.current;
+                     const canvas = visualizationCanvasRef.current;
                      if (canvas) {
                          const ctx = canvas.getContext('2d');
                          if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
                      }
                 }
-             } else if ((category === 'sort' || category === 'search') && array) {
+             } else if ((category === 'sort' || category === 'search') && array && array.length > 0) {
                  drawArray(array);
+             } else {
+                  // Clear canvas if array is empty or undefined
+                 const canvas = visualizationCanvasRef.current;
+                  if (canvas) {
+                      const ctx = canvas.getContext('2d');
+                      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+                  }
              }
          });
          return;
@@ -921,18 +970,18 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
   const getWorkspaceDescription = () => {
         switch (editorMode) {
-            case 'node': return "Click to add nodes. Drag nodes to move.";
+            case 'node': return "Click/Tap to add nodes. Drag nodes to move.";
             case 'edge': return "Desktop: Drag between nodes. Mobile: Tap two nodes. Click/Tap edge to edit/delete.";
-            case 'set-source': return "Click on a node to set it as the source (for Prim's).";
+            case 'set-source': return "Click/Tap on a node to set it as the source (for Prim's).";
             default: return "Graph Workspace";
         }
     };
 
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6">
+    <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
       {/* Controls Column */}
-      <Card className="w-full lg:w-1/3 xl:w-1/4">
+      <Card className="w-full lg:w-1/3 xl:w-1/4 flex-shrink-0">
         <CardHeader>
           <CardTitle>Controls</CardTitle>
         </CardHeader>
@@ -940,7 +989,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
           {/* Input Section - Conditional */}
           {isGraphCategory ? (
              // Graph controls
-              <>
+              <div className="space-y-3">
                  {/* Button to use the Editor's graph for visualization */}
                   <Button
                       onClick={() => {
@@ -993,8 +1042,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                                     </SelectItem>
                                 ))
                             ) : (
-                                /* No fallback item needed here, placeholder handles empty state */
-                                null
+                                <SelectItem value="no-nodes" disabled>No nodes available</SelectItem>
                             )
                            }
                        </SelectContent>
@@ -1003,16 +1051,16 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                      </>
                  )}
                   <Separator />
-                   <p className="text-sm text-muted-foreground">
+                   <p className="text-sm text-muted-foreground text-center">
                        {isUsingEditorGraph
                            ? "Visualizing graph from workspace."
                            : "Visualizing randomly generated graph."
                        }
                    </p>
-             </>
+             </div>
           ) : (
              // Array and Target Inputs
-            <>
+            <div className="space-y-3">
               <div className="space-y-2">
                 <Label htmlFor="array-input">Array ({MIN_ARRAY_SIZE}-{MAX_ARRAY_SIZE} elements, 1-100)</Label>
                 <div className="flex gap-2">
@@ -1022,9 +1070,9 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                     value={inputValue}
                     onChange={handleInputChange}
                     placeholder="e.g., 5, 3, 8, 1, 9"
-                    className="flex-grow"
+                    className="flex-grow min-w-0" // Allow input to shrink
                   />
-                  <Button onClick={handleSetArrayData} variant="secondary" size="sm">Set</Button>
+                  <Button onClick={handleSetArrayData} variant="secondary" size="sm" className="flex-shrink-0">Set</Button>
                 </div>
                 <Button onClick={() => generateRandomArray(array?.length || DEFAULT_ARRAY_SIZE)} variant="outline" size="sm" className="w-full">
                   <ShuffleIcon className="mr-2 h-4 w-4" /> Randomize Array
@@ -1048,7 +1096,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                   )}
                 </div>
               )}
-             </>
+             </div>
           )}
 
 
@@ -1062,7 +1110,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
               step={10}
               value={[MAX_SPEED + MIN_SPEED - speed]}
               onValueChange={handleSpeedChange}
-              className="my-4"
+              className="my-2" // Reduced vertical margin
             />
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>Slow</span>
@@ -1071,7 +1119,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
           </div>
 
           {/* Playback Controls */}
-           <div className="flex items-center justify-center space-x-2 mt-4">
+           <div className="flex items-center justify-center space-x-2 pt-2">
               <Button
                     onClick={handlePlayPause}
                     variant="default"
@@ -1097,47 +1145,49 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
       </Card>
 
       {/* Main Content Area (Workspace + Visualization) */}
-      <div className="flex-grow flex flex-col gap-4 lg:w-2/3 xl:w-3/4">
+      <div className="flex-grow flex flex-col gap-4 lg:gap-6 min-w-0"> {/* Ensure flex-grow can shrink */}
 
         {/* Conditional Rendering for Graph Workspace */}
         {isGraphCategory && (
              <Card>
-                 <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+                 <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 flex-wrap pb-3 pt-4 px-4 sm:px-6">
                      <div className="flex-grow min-w-[150px]">
-                        <CardTitle>Graph Workspace</CardTitle>
+                        <CardTitle className="text-xl lg:text-2xl">Graph Workspace</CardTitle>
                          <CardDescription className="text-xs sm:text-sm">
                             {getWorkspaceDescription()}
                          </CardDescription>
                      </div>
-                      {/* Editor Mode Toggle */}
-                     <ToggleGroup type="single" value={editorMode} onValueChange={handleEditorModeChange} size="sm" aria-label="Graph Editor Mode">
-                         <ToggleGroupItem value="node" aria-label="Node Mode" title="Node Mode (Add/Move)">
-                           <CircleDot className="h-4 w-4" />
-                         </ToggleGroupItem>
-                         <ToggleGroupItem value="edge" aria-label="Edge Mode" title="Edge Mode (Add/Edit)">
-                           <Waypoints className="h-4 w-4" />
-                         </ToggleGroupItem>
-                         <ToggleGroupItem
-                            value="set-source"
-                            aria-label="Set Source Node Mode"
-                            title="Set Source Node (Prim's)"
-                            disabled={algorithmId !== 'prims-algorithm'}
-                            >
-                           <LocateFixed className="h-4 w-4" />
-                         </ToggleGroupItem>
-                     </ToggleGroup>
-                     {/* Clear Button */}
-                     <Button onClick={clearGraphWorkspace} variant="destructive" size="sm" className="flex-shrink-0">
-                         <Trash2 className="mr-2 h-4 w-4" /> Clear
-                     </Button>
+                      {/* Controls grouped together */}
+                      <div className="flex items-center gap-2 flex-wrap justify-end">
+                          {/* Editor Mode Toggle */}
+                         <ToggleGroup type="single" value={editorMode} onValueChange={handleEditorModeChange} size="sm" aria-label="Graph Editor Mode">
+                             <ToggleGroupItem value="node" aria-label="Node Mode" title="Node Mode (Add/Move)">
+                               <CircleDot className="h-4 w-4" />
+                             </ToggleGroupItem>
+                             <ToggleGroupItem value="edge" aria-label="Edge Mode" title="Edge Mode (Add/Edit)">
+                               <Waypoints className="h-4 w-4" />
+                             </ToggleGroupItem>
+                             <ToggleGroupItem
+                                value="set-source"
+                                aria-label="Set Source Node Mode"
+                                title="Set Source Node (Prim's)"
+                                disabled={algorithmId !== 'prims-algorithm'}
+                                >
+                               <LocateFixed className="h-4 w-4" />
+                             </ToggleGroupItem>
+                         </ToggleGroup>
+                         {/* Clear Button */}
+                         <Button onClick={clearGraphWorkspace} variant="destructive" size="sm" className="flex-shrink-0">
+                             <Trash2 className="mr-1.5 h-4 w-4" /> Clear
+                         </Button>
+                      </div>
                  </CardHeader>
-                 <CardContent className="aspect-[2/1] p-0 overflow-hidden relative border rounded-b-lg">
+                 <CardContent className="aspect-video md:aspect-[2/1] p-0 overflow-hidden relative border-t border-b-0 sm:border rounded-b-lg"> {/* Adjusted aspect ratio and borders */}
                      <GraphEditor
                          // Pass the editorGraph state and its updater
                          graph={editorGraph}
                          onGraphChange={handleEditorGraphChange}
-                         width={GRAPH_CANVAS_WIDTH}
-                         height={GRAPH_CANVAS_HEIGHT}
+                         // Width/Height are now dynamic based on container
                          readOnly={isPlaying} // Make editor read-only during visualization playback
                          mode={editorMode} // Pass current mode
                          onSetStartNode={handleSetStartNodeFromEditor} // Pass handler
@@ -1148,19 +1198,19 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
 
          {/* Visualization Area */}
-         <Card className="flex-grow">
-            <CardHeader>
-                <CardTitle>Visualization</CardTitle>
-                 <CardDescription className={cn("transition-opacity duration-300 min-h-[1.5em]", (steps.length > 0 || !isPlaying) ? 'opacity-100' : 'opacity-50')}>
+         <Card className="flex-grow flex flex-col"> {/* Use flex-grow and flex-col */}
+            <CardHeader className="pb-3 pt-4 px-4 sm:px-6">
+                <CardTitle className="text-xl lg:text-2xl">Visualization</CardTitle>
+                 <CardDescription className={cn("transition-opacity duration-300 min-h-[1.25em] text-xs sm:text-sm", (steps.length > 0 || !isPlaying) ? 'opacity-100' : 'opacity-50')}>
                      {currentExplanation || '\u00A0'}
                 </CardDescription>
             </CardHeader>
-            <CardContent className="aspect-[2/1] p-0 overflow-hidden relative border rounded-b-lg">
+            {/* Container for the canvas */}
+            <CardContent ref={visualizationContainerRef} className="flex-grow p-0 overflow-hidden relative border-t rounded-b-lg min-h-[250px] sm:min-h-[300px] md:min-h-[400px]">
                  <canvas
-                    ref={canvasRef}
-                    width={GRAPH_CANVAS_WIDTH}
-                    height={GRAPH_CANVAS_HEIGHT}
-                     className="absolute top-0 left-0 w-full h-full bg-transparent rounded-b-lg"
+                    ref={visualizationCanvasRef}
+                    // Width and height are set dynamically via JS
+                    className="absolute top-0 left-0 w-full h-full bg-transparent rounded-b-lg"
                  ></canvas>
              </CardContent>
 
@@ -1196,3 +1246,4 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
   );
 }
 
+    
