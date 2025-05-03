@@ -12,9 +12,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
       <main className="flex-grow container mx-auto px-4 py-8">
         {children}
       </main>
-      <footer className="py-4 text-center text-sm text-muted-foreground">
-        Built with Firebase Studio & Next.js
-      </footer>
+      {/* Footer removed as requested */}
     </div>
   );
 }
