@@ -420,6 +420,8 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
         setIsWeightModalOpen(false);
         setPendingEdge(null);
         triggerGraphChange(nodes, updatedEdges); // Propagate change
+         // Reset mobile selection after attempting edge creation - Moved here
+         if (isMobile) setFirstNodeForEdge(null);
     };
 
      // Delete Node - Placeholder, might need explicit controls
@@ -611,7 +613,7 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
                         <DialogClose asChild>
                              <Button variant="outline">Cancel</Button>
                          </DialogClose>
-                         <Button onClick={editingEdge ? handleUpdateWeight : handleConfirmWeight}>
+                         <Button onClick={editingEdge ? handleUpdateWeight : handleConfirmWeight} disabled={pendingEdge === null}>
                            {editingEdge ? <><Check className="mr-2 h-4 w-4"/> Update</> : <><Check className="mr-2 h-4 w-4"/> Add Edge</>}
                          </Button>
                     </DialogFooter>
@@ -622,5 +624,3 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
 };
 
 export default GraphEditor;
-
-    
