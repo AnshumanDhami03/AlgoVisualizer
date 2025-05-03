@@ -9,6 +9,7 @@ import { Slider } from "@/components/ui/slider";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Play, Pause, RotateCcw, Shuffle as ShuffleIcon, Search as SearchIcon, Share2 as GraphIcon, Target } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator"; // Import Separator
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import type { AlgorithmStep, ArrayAlgorithmStep, GraphAlgorithmStep, Graph, Node, Edge } from '@/lib/types'; // Import types
@@ -44,7 +45,9 @@ const MIN_SPEED = 50; // ms
 const MAX_SPEED = 1000; // ms
 const DEFAULT_SPEED = 300; // ms
 
-// Constants for Graph Visualization
+// Constants for Graph Visualization/Editor
+const GRAPH_CANVAS_WIDTH = 800;
+const GRAPH_CANVAS_HEIGHT = 400;
 const NODE_RADIUS = 22; // Slightly larger node radius for better visibility of ID
 const EDGE_WIDTH = 2;
 const MST_EDGE_WIDTH = 4;
@@ -71,20 +74,20 @@ const ALGORITHM_MAP: Record<string, Record<string, Function>> = {
     },
 };
 
-// Helper to generate a simpler, more spaced-out random graph
-const generateRandomGraph = (numNodes = 5, edgeProbability = 0.4): Graph => {
+// Helper to generate a random graph, ensuring connectivity
+const generateRandomGraph = (numNodes = 7, edgeDensity = 0.35): Graph => {
     const nodes: Node[] = [];
-    const edges: Edge[] = [];
-    const canvasWidth = 700; // Keep canvas size reasonable
-    const canvasHeight = 350;
-    const padding = 100; // Significantly increased padding to spread nodes more
-    const minNodeDistance = NODE_RADIUS * 4; // Minimum distance between node centers
+    let edges: Edge[] = [];
+    const canvasWidth = GRAPH_CANVAS_WIDTH;
+    const canvasHeight = GRAPH_CANVAS_HEIGHT;
+    const padding = 100; // Keep padding generous
+    const minNodeDistance = NODE_RADIUS * 5; // Increased minimum distance
 
     // Generate node positions somewhat spread out, avoiding overlaps
     for (let i = 0; i < numNodes; i++) {
         let x, y, tooClose;
         let attempts = 0;
-        const maxAttempts = 50; // Prevent infinite loops
+        const maxAttempts = 100; // Allow more attempts for spacing
         do {
             tooClose = false;
             x = Math.random() * (canvasWidth - 2 * padding) + padding;
@@ -100,97 +103,98 @@ const generateRandomGraph = (numNodes = 5, edgeProbability = 0.4): Graph => {
             attempts++;
         } while (tooClose && attempts < maxAttempts);
 
-        // If we couldn't find a good spot after many attempts, place it randomly anyway
         nodes.push({ id: i, x, y });
     }
 
-    // Generate edges
-    const edgeSet = new Set<string>(); // Avoid duplicate edges (e.g., 0-1 and 1-0)
+    // Generate edges based on density
+    const edgeSet = new Set<string>(); // Avoid duplicate edges (e.g., 0-1 and 1-0) and self-loops
     for (let i = 0; i < numNodes; i++) {
-        for (let j = i + 1; j < numNodes; j++) {
-            if (Math.random() < edgeProbability) {
+        for (let j = i + 1; j < numNodes; j++) { // Iterate j from i + 1 to avoid self-loops and duplicates
+            if (Math.random() < edgeDensity) {
                 const weight = Math.floor(Math.random() * 20) + 1; // Weight between 1 and 20
-                // Ensure unique ID format, avoiding potential collisions with other structures
-                const edgeId = `edge-${i}-${j}-${weight}`;
-                const reverseEdgeIdCheck = `edge-${j}-${i}`; // Check base connection without weight
+                const edgeId = `edge-${i}-${j}-${weight}`; // Base ID for checking existence
 
-                 // Check if an edge between i and j already exists (ignoring weight in the check for simplicity)
-                 let exists = false;
-                 edgeSet.forEach(id => {
-                    if (id.startsWith(`edge-${i}-${j}-`) || id.startsWith(`edge-${j}-${i}-`)) {
+                // Check if an edge between i and j already exists *without* considering weight in the check
+                let exists = false;
+                edges.forEach(existingEdge => {
+                    if ((existingEdge.source === i && existingEdge.target === j) || (existingEdge.source === j && existingEdge.target === i)) {
                         exists = true;
                     }
-                 });
+                });
 
-
-                 if (!exists) {
-                     edges.push({ id: edgeId, source: i, target: j, weight });
-                     edgeSet.add(edgeId); // Add the specific weighted edge ID
-                 }
+                if (!exists) {
+                    edges.push({ id: edgeId, source: i, target: j, weight });
+                    edgeSet.add(`${i}-${j}`); // Add canonical representation to set
+                }
             }
         }
     }
 
-     // Ensure graph is connected (simple approach: add edges if needed)
-    if (nodes.length > 1 && edges.length < nodes.length - 1) {
-        // Check connectivity using a simple visited set approach
+    // Ensure graph connectivity
+    if (nodes.length > 1) {
         const adj: Map<number, number[]> = new Map();
+        nodes.forEach(node => adj.set(node.id, [])); // Initialize adjacency list
         edges.forEach(edge => {
-            if (!adj.has(edge.source)) adj.set(edge.source, []);
-            if (!adj.has(edge.target)) adj.set(edge.target, []);
-            adj.get(edge.source)!.push(edge.target);
-            adj.get(edge.target)!.push(edge.source);
+            adj.get(edge.source)?.push(edge.target);
+            adj.get(edge.target)?.push(edge.source);
         });
 
-         let componentRoots: number[] = [];
-         const visitedOverall = new Set<number>();
+        const visited = new Set<number>();
+        const components: number[][] = [];
 
-         for(const startNode of nodes) {
-             if(visitedOverall.has(startNode.id)) continue;
+        for (const node of nodes) {
+            if (!visited.has(node.id)) {
+                const currentComponent: number[] = [];
+                const queue = [node.id];
+                visited.add(node.id);
+                currentComponent.push(node.id);
 
-             componentRoots.push(startNode.id); // Found a new component
-             const componentVisited = new Set<number>();
-             const queue = [startNode.id];
-             componentVisited.add(startNode.id);
-             visitedOverall.add(startNode.id);
-
-             while(queue.length > 0) {
-                 const u = queue.shift()!;
-                 const neighbors = adj.get(u) || [];
-                 neighbors.forEach(v => {
-                     if (!componentVisited.has(v)) {
-                         componentVisited.add(v);
-                         visitedOverall.add(v);
-                         queue.push(v);
-                     }
-                 });
-             }
-         }
-
-
-        // If more than one component root was found, connect them
-        if (componentRoots.length > 1) {
-             for (let i = 0; i < componentRoots.length - 1; i++) {
-                 const nodeA = componentRoots[i];
-                 const nodeB = componentRoots[i+1];
-                 const weight = Math.floor(Math.random() * 15) + 5; // Weight for connecting edges
-                 const edgeId = `connect-${nodeA}-${nodeB}-${weight}`;
-
-                 // Double check edge doesn't exist before adding
-                  let exists = false;
-                  edgeSet.forEach(id => {
-                     if (id.startsWith(`edge-${nodeA}-${nodeB}-`) || id.startsWith(`edge-${nodeB}-${nodeA}-`) || id.startsWith(`connect-${nodeA}-${nodeB}-`) || id.startsWith(`connect-${nodeB}-${nodeA}-`)) {
-                         exists = true;
-                     }
-                  });
-
-                 if (!exists) {
-                     edges.push({ id: edgeId, source: nodeA, target: nodeB, weight });
-                     edgeSet.add(edgeId);
-                 }
-             }
+                while (queue.length > 0) {
+                    const u = queue.shift()!;
+                    const neighbors = adj.get(u) || [];
+                    for (const v of neighbors) {
+                        if (!visited.has(v)) {
+                            visited.add(v);
+                            queue.push(v);
+                            currentComponent.push(v); // Add node ID to component list (was v.id before which is wrong)
+                        }
+                    }
+                }
+                components.push(currentComponent);
+            }
         }
+
+
+        // If more than one component, add edges to connect them
+        if (components.length > 1) {
+            // console.log(`Graph is disconnected with ${components.length} components. Adding edges...`);
+            for (let i = 0; i < components.length - 1; i++) {
+                const compA = components[i];
+                const compB = components[i + 1];
+                // Pick random nodes from each component to connect
+                const nodeAId = compA[Math.floor(Math.random() * compA.length)];
+                const nodeBId = compB[Math.floor(Math.random() * compB.length)];
+
+                // Ensure the edge doesn't already exist
+                 const canonicalEdgeId = nodeAId < nodeBId ? `${nodeAId}-${nodeBId}` : `${nodeBId}-${nodeAId}`;
+                 if (!edgeSet.has(canonicalEdgeId)) {
+                     const weight = Math.floor(Math.random() * 15) + 5; // Weight for connecting edges
+                     const edgeId = `connect-${nodeAId}-${nodeBId}-${weight}`;
+                     edges.push({ id: edgeId, source: nodeAId, target: nodeBId, weight });
+                     edgeSet.add(canonicalEdgeId); // Add to set to prevent duplicates
+                    // console.log(`Added edge ${edgeId} to connect components.`);
+
+                    // Update adjacency list for subsequent checks if needed (though one pass is usually enough)
+                    adj.get(nodeAId)?.push(nodeBId);
+                    adj.get(nodeBId)?.push(nodeAId);
+                 } else {
+                      // console.log(`Skipping edge between ${nodeAId} and ${nodeBId} - already exists.`);
+                 }
+            }
+        }
+         // console.log("Final generated graph:", { nodes, edges });
     }
+
 
     return { nodes, edges };
 };
@@ -225,7 +229,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
     setInputValue(newArray.join(", "));
     resetVisualization();
     setIsGenerated(true);
-  }, []); // Removed resetVisualization from dependencies to avoid loops
+  }, []); // Removed resetVisualization from dependencies
 
    const initializeGraph = useCallback((newGraph?: Graph) => {
         const graphToUse = newGraph || generateRandomGraph();
@@ -358,7 +362,8 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
      // Immediately draw the current state after reset
       requestAnimationFrame(() => { // Ensure canvas context is ready
         if (category === 'graph') {
-           drawGraph(graph, [], [], [], undefined, algorithmId === 'prims-algorithm' ? startNode ?? undefined : undefined); // Draw initial graph state with potential start node highlight
+            // Draw the initial state of the graph on the visualization canvas
+           drawGraphVisualization(graph, [], [], [], undefined, algorithmId === 'prims-algorithm' ? startNode ?? undefined : undefined);
         } else {
            drawArray(array); // Draw initial array state
         }
@@ -429,7 +434,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
              requestAnimationFrame(() => {
                 const firstStep = newSteps[0];
                  if (isGraphStep(firstStep)) {
-                    drawGraph(firstStep.graph, firstStep.mstEdges, firstStep.highlightedNodes, firstStep.highlightedEdges, firstStep.candidateEdge, firstStep.startNodeId);
+                    drawGraphVisualization(firstStep.graph, firstStep.mstEdges, firstStep.highlightedNodes, firstStep.highlightedEdges, firstStep.candidateEdge, firstStep.startNodeId);
                  } else if (isArrayStep(firstStep)) {
                     drawArray(firstStep.array, firstStep.highlight, firstStep.pivot, firstStep.sortedIndices, firstStep.target, firstStep.foundIndex);
                  }
@@ -507,7 +512,8 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
   }, [category]); // Include category as dependency
 
 
-  const drawGraph = useCallback((
+  // Renamed to specifically target the visualization canvas
+  const drawGraphVisualization = useCallback((
         graphData: Graph,
         mstEdges: Edge[] = [],
         highlightedNodes: number[] = [],
@@ -515,7 +521,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
         candidateEdge?: Edge,
         persistentStartNodeId?: number // Add parameter for persistent start node highlight
     ) => {
-        const canvas = canvasRef.current;
+        const canvas = canvasRef.current; // This ref should now point ONLY to the visualization canvas
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
@@ -681,8 +687,8 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
          // Draw initial/reset state when not animating
           requestAnimationFrame(() => {
              if (category === 'graph' && graph) {
-                 // Draw graph with MST edges empty, no step highlights, but potential persistent start node
-                 drawGraph(graph, [], [], [], undefined, persistentStartId);
+                 // Draw graph with MST edges empty, no step highlights, but potential persistent start node ON THE VISUALIZATION CANVAS
+                 drawGraphVisualization(graph, [], [], [], undefined, persistentStartId);
              } else if (array) {
                  drawArray(array);
              }
@@ -696,15 +702,15 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
     requestAnimationFrame(() => {
          if (isGraphStep(currentStep)) {
              const { graph: currentGraph, mstEdges, highlightedNodes, highlightedEdges, candidateEdge } = currentStep;
-             // Use the determined persistentStartId for drawing
-             drawGraph(currentGraph, mstEdges, highlightedNodes, highlightedEdges, candidateEdge, persistentStartId);
+             // Use the determined persistentStartId for drawing ON THE VISUALIZATION CANVAS
+             drawGraphVisualization(currentGraph, mstEdges, highlightedNodes, highlightedEdges, candidateEdge, persistentStartId);
          } else if (isArrayStep(currentStep)) {
              const { array: stepArray, highlight, pivot, sortedIndices, target, foundIndex } = currentStep;
              drawArray(stepArray, highlight, pivot, sortedIndices, target, foundIndex);
          }
     });
 
- }, [currentStepIndex, steps, drawArray, drawGraph, category, graph, array, startNode, algorithmId]);
+ }, [currentStepIndex, steps, drawArray, drawGraphVisualization, category, graph, array, startNode, algorithmId]);
 
 
    useEffect(() => {
@@ -727,7 +733,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
         clearTimeout(timeoutId.current);
       }
     };
-  }, [isPlaying, currentStepIndex, steps, speed, toast]); // Removed drawGraph, drawArray
+  }, [isPlaying, currentStepIndex, steps, speed, toast]); // Removed drawGraphVisualization, drawArray
 
 
   // --- Event Handlers ---
@@ -748,7 +754,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                  }
 
                  if (isGraphStep(firstStep)) {
-                     drawGraph(firstStep.graph, firstStep.mstEdges, firstStep.highlightedNodes, firstStep.highlightedEdges, firstStep.candidateEdge, persistentStartId);
+                     drawGraphVisualization(firstStep.graph, firstStep.mstEdges, firstStep.highlightedNodes, firstStep.highlightedEdges, firstStep.candidateEdge, persistentStartId);
                  } else if (isArrayStep(firstStep)) {
                      drawArray(firstStep.array, firstStep.highlight, firstStep.pivot, firstStep.sortedIndices, firstStep.target, firstStep.foundIndex);
                  }
@@ -761,13 +767,12 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
   const handleReset = () => {
      if (category === 'graph') {
-         // Reset graph to a new random one or keep the current structure?
-         // Option 1: Keep current edited structure, just reset algorithm state
-          // initializeGraph(graph); // Keep user's edits
-          setIsGenerated(false); // Ensure it's marked as not freshly generated
-          resetVisualization(); // Just reset the algorithm state
-         // Option 2: Generate a completely new random graph
-         // initializeGraph(); // Generate new random
+          // Reset visualization state, keeping the user's graph or the last generated one
+           if(isGenerated){
+               initializeGraph(graph); // Re-initialize with the current graph if it was generated
+           } else {
+                resetVisualization(); // Just reset steps if graph was user-edited
+           }
      } else {
          // For array, reset based on current input value or generate new random
          const currentArray = parseArrayInput(inputValue);
@@ -779,7 +784,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
          }
 
      }
-     // resetVisualization is called within initializeGraph/generateRandomArray or explicitly above
+     // resetVisualization is called within generateRandomArray or explicitly above
   };
 
 
@@ -817,7 +822,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
         <CardContent className="space-y-4">
           {/* Input Section - Conditional */}
           {isGraphCategory ? (
-             // Graph controls (delegated to GraphEditor, plus start node selection)
+             // Graph controls
               <>
                   <Button onClick={handleRandomizeGraph} variant="outline" size="sm" className="w-full">
                       <ShuffleIcon className="mr-2 h-4 w-4" /> Generate Random Graph
@@ -850,6 +855,10 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                      </Select>
                    </div>
                  )}
+                  <Separator />
+                   <p className="text-sm text-muted-foreground">
+                       Edit the graph below or generate a random one. The visualization will use the current graph structure.
+                   </p>
              </>
           ) : (
              // Array and Target Inputs
@@ -924,8 +933,32 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
         </CardContent>
       </Card>
 
-      {/* Visualization Column */}
-      <div className="flex-grow flex flex-col gap-4 lg:w-2/3 xl:w-3/4"> {/* Adjusted width */}
+      {/* Main Content Area (Workspace + Visualization) */}
+      <div className="flex-grow flex flex-col gap-4 lg:w-2/3 xl:w-3/4">
+
+        {/* Conditional Rendering for Graph Workspace */}
+        {isGraphCategory && (
+             <Card>
+                 <CardHeader>
+                     <CardTitle>Graph Workspace</CardTitle>
+                     <CardDescription>
+                         Click to add nodes, Shift+Drag between nodes to add edges. Click edges to edit/delete.
+                     </CardDescription>
+                 </CardHeader>
+                 <CardContent className="aspect-[2/1] p-0 overflow-hidden relative border rounded-b-lg">
+                     <GraphEditor
+                         graph={graph}
+                         onGraphChange={handleGraphChange}
+                         width={GRAPH_CANVAS_WIDTH}
+                         height={GRAPH_CANVAS_HEIGHT}
+                         readOnly={isPlaying} // Make editor read-only during visualization playback
+                     />
+                 </CardContent>
+             </Card>
+        )}
+
+
+         {/* Visualization Area */}
          <Card className="flex-grow">
             <CardHeader>
                 <CardTitle>Visualization</CardTitle>
@@ -933,41 +966,18 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                      {currentExplanation || '\u00A0'} {/* Non-breaking space, increased min-height */}
                 </CardDescription>
             </CardHeader>
-             {/* Conditional Rendering: Canvas for Arrays, GraphEditor for Graphs */}
-             {isGraphCategory ? (
-                 <CardContent className="aspect-[2/1] p-0 overflow-hidden relative border rounded-b-lg">
-                    {/* GraphEditor for interactive editing */}
-                    <GraphEditor
-                        graph={graph}
-                        onGraphChange={handleGraphChange}
-                        width={800} // Keep consistent size
-                        height={400}
-                        readOnly={isPlaying} // Make editor read-only during visualization
-                    />
-                    {/* Visualization Canvas sits *on top* (z-index) during playback */}
-                     <canvas
-                        ref={canvasRef}
-                        width="800"
-                        height="400"
-                        className={cn(
-                            "absolute top-0 left-0 w-full h-full rounded-b-lg", // Apply rounding
-                            isPlaying ? "z-10 pointer-events-none bg-background/10" : "z-0 pointer-events-none bg-transparent" // Layer control
-                             )}
-                     ></canvas>
-                 </CardContent>
-             ) : (
-                 // Original Canvas for Array Visualizations
-                 <CardContent className="aspect-[2/1] p-0 overflow-hidden relative border rounded-b-lg">
-                     <canvas
-                        ref={canvasRef}
-                        width="800"
-                        height="400"
-                         className="absolute top-0 left-0 w-full h-full bg-transparent rounded-b-lg" // Use transparent background, ensure rounding
-                     ></canvas>
-                 </CardContent>
-             )}
+             {/* Visualization Canvas */}
+            <CardContent className="aspect-[2/1] p-0 overflow-hidden relative border rounded-b-lg">
+                 <canvas
+                    ref={canvasRef} // This ref now points ONLY to the visualization canvas
+                    width={GRAPH_CANVAS_WIDTH} // Use constants for size
+                    height={GRAPH_CANVAS_HEIGHT}
+                     className="absolute top-0 left-0 w-full h-full bg-transparent rounded-b-lg" // Use transparent background, ensure rounding
+                 ></canvas>
+             </CardContent>
 
          </Card>
+
          {/* Optional: DSU State Visualization for Kruskal's */}
          {algorithmId === 'kruskals-algorithm' && isGraphStep(currentStepData || {}) && currentStepData?.dsuState && (
              <Card>
