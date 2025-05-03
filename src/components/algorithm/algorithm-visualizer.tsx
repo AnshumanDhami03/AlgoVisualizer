@@ -45,7 +45,7 @@ const MAX_SPEED = 1000; // ms
 const DEFAULT_SPEED = 300; // ms
 
 // Constants for Graph Visualization
-const NODE_RADIUS = 20; // Slightly larger for better visibility
+const NODE_RADIUS = 22; // Slightly larger node radius for better visibility of ID
 const EDGE_WIDTH = 2;
 const MST_EDGE_WIDTH = 4;
 const START_NODE_COLOR = "hsl(var(--accent))"; // Color for the start node in Prim's (Orange)
@@ -71,21 +71,37 @@ const ALGORITHM_MAP: Record<string, Record<string, Function>> = {
     },
 };
 
-// Helper to generate a simpler graph for testing
-const generateRandomGraph = (numNodes = 7, edgeProbability = 0.4): Graph => {
+// Helper to generate a simpler, more spaced-out random graph
+const generateRandomGraph = (numNodes = 5, edgeProbability = 0.4): Graph => {
     const nodes: Node[] = [];
     const edges: Edge[] = [];
-    const canvasWidth = 700; // Use slightly smaller dimensions for less dense layout
+    const canvasWidth = 700; // Keep canvas size reasonable
     const canvasHeight = 350;
-    const padding = 60; // Increase padding to spread nodes more
+    const padding = 100; // Significantly increased padding to spread nodes more
+    const minNodeDistance = NODE_RADIUS * 4; // Minimum distance between node centers
 
-    // Generate node positions somewhat spread out
+    // Generate node positions somewhat spread out, avoiding overlaps
     for (let i = 0; i < numNodes; i++) {
-        nodes.push({
-            id: i,
-            x: Math.random() * (canvasWidth - 2 * padding) + padding,
-            y: Math.random() * (canvasHeight - 2 * padding) + padding,
-        });
+        let x, y, tooClose;
+        let attempts = 0;
+        const maxAttempts = 50; // Prevent infinite loops
+        do {
+            tooClose = false;
+            x = Math.random() * (canvasWidth - 2 * padding) + padding;
+            y = Math.random() * (canvasHeight - 2 * padding) + padding;
+            // Check distance from existing nodes
+            for (const existingNode of nodes) {
+                const distSq = (x - existingNode.x) ** 2 + (y - existingNode.y) ** 2;
+                if (distSq < minNodeDistance ** 2) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            attempts++;
+        } while (tooClose && attempts < maxAttempts);
+
+        // If we couldn't find a good spot after many attempts, place it randomly anyway
+        nodes.push({ id: i, x, y });
     }
 
     // Generate edges
@@ -94,12 +110,22 @@ const generateRandomGraph = (numNodes = 7, edgeProbability = 0.4): Graph => {
         for (let j = i + 1; j < numNodes; j++) {
             if (Math.random() < edgeProbability) {
                 const weight = Math.floor(Math.random() * 20) + 1; // Weight between 1 and 20
-                const edgeId = `${i}-${j}-${weight}`;
-                const reverseEdgeId = `${j}-${i}-${weight}`; // Check for reverse too, just in case
+                // Ensure unique ID format, avoiding potential collisions with other structures
+                const edgeId = `edge-${i}-${j}-${weight}`;
+                const reverseEdgeIdCheck = `edge-${j}-${i}`; // Check base connection without weight
 
-                 if (!edgeSet.has(edgeId) && !edgeSet.has(reverseEdgeId)) {
+                 // Check if an edge between i and j already exists (ignoring weight in the check for simplicity)
+                 let exists = false;
+                 edgeSet.forEach(id => {
+                    if (id.startsWith(`edge-${i}-${j}-`) || id.startsWith(`edge-${j}-${i}-`)) {
+                        exists = true;
+                    }
+                 });
+
+
+                 if (!exists) {
                      edges.push({ id: edgeId, source: i, target: j, weight });
-                     edgeSet.add(edgeId);
+                     edgeSet.add(edgeId); // Add the specific weighted edge ID
                  }
             }
         }
@@ -116,42 +142,53 @@ const generateRandomGraph = (numNodes = 7, edgeProbability = 0.4): Graph => {
             adj.get(edge.target)!.push(edge.source);
         });
 
-        const visited = new Set<number>();
-        const queue = [nodes[0].id];
-        visited.add(nodes[0].id);
+         let componentRoots: number[] = [];
+         const visitedOverall = new Set<number>();
 
-        while(queue.length > 0) {
-            const u = queue.shift()!;
-            const neighbors = adj.get(u) || [];
-            neighbors.forEach(v => {
-                if (!visited.has(v)) {
-                    visited.add(v);
-                    queue.push(v);
-                }
-            });
-        }
+         for(const startNode of nodes) {
+             if(visitedOverall.has(startNode.id)) continue;
 
-        // If not all nodes were visited, add edges to connect components
-        if (visited.size < nodes.length) {
-             const visitedNodes = Array.from(visited);
-             const unvisitedNodes = nodes.filter(n => !visited.has(n.id));
+             componentRoots.push(startNode.id); // Found a new component
+             const componentVisited = new Set<number>();
+             const queue = [startNode.id];
+             componentVisited.add(startNode.id);
+             visitedOverall.add(startNode.id);
 
-             // Connect first unvisited node to a random visited node
-             if (visitedNodes.length > 0 && unvisitedNodes.length > 0) {
-                 const nodeA = visitedNodes[Math.floor(Math.random() * visitedNodes.length)];
-                 const nodeB = unvisitedNodes[0].id;
+             while(queue.length > 0) {
+                 const u = queue.shift()!;
+                 const neighbors = adj.get(u) || [];
+                 neighbors.forEach(v => {
+                     if (!componentVisited.has(v)) {
+                         componentVisited.add(v);
+                         visitedOverall.add(v);
+                         queue.push(v);
+                     }
+                 });
+             }
+         }
+
+
+        // If more than one component root was found, connect them
+        if (componentRoots.length > 1) {
+             for (let i = 0; i < componentRoots.length - 1; i++) {
+                 const nodeA = componentRoots[i];
+                 const nodeB = componentRoots[i+1];
                  const weight = Math.floor(Math.random() * 15) + 5; // Weight for connecting edges
                  const edgeId = `connect-${nodeA}-${nodeB}-${weight}`;
-                 const reverseEdgeId = `connect-${nodeB}-${nodeA}-${weight}`;
 
-                 if (!edgeSet.has(edgeId) && !edgeSet.has(reverseEdgeId)) {
+                 // Double check edge doesn't exist before adding
+                  let exists = false;
+                  edgeSet.forEach(id => {
+                     if (id.startsWith(`edge-${nodeA}-${nodeB}-`) || id.startsWith(`edge-${nodeB}-${nodeA}-`) || id.startsWith(`connect-${nodeA}-${nodeB}-`) || id.startsWith(`connect-${nodeB}-${nodeA}-`)) {
+                         exists = true;
+                     }
+                  });
+
+                 if (!exists) {
                      edges.push({ id: edgeId, source: nodeA, target: nodeB, weight });
                      edgeSet.add(edgeId);
-                     // Recursively call or iteratively connect remaining unvisited (simplified here)
                  }
              }
-             // Note: This simple connection might not connect *all* components if there were more than 2.
-             // A full DSU-based approach during generation is more robust for guaranteeing connectivity.
         }
     }
 
@@ -554,24 +591,24 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
             // Draw edge weight
             const midX = (sourceNode.x + targetNode.x) / 2;
             const midY = (sourceNode.y + targetNode.y) / 2;
-            ctx.font = 'bold 11px Arial'; // Make weight slightly bolder/larger
+            ctx.font = 'bold 12px Arial'; // Slightly larger weight font
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
-             // Simple offset to avoid overlap with node/line
             const angle = Math.atan2(targetNode.y - sourceNode.y, targetNode.x - sourceNode.x);
-             // Increase offset slightly for better separation
-            const offsetX = Math.sin(angle) * 10;
-            const offsetY = -Math.cos(angle) * 10;
+            // Increase offset significantly for better separation from line/nodes
+            const offsetX = Math.sin(angle) * 15;
+            const offsetY = -Math.cos(angle) * 15;
             const text = edge.weight.toString();
             const textWidth = ctx.measureText(text).width;
 
-             // Add a background for readability using theme background
+            // Add a background for readability using theme background
             ctx.fillStyle = `hsl(${backgroundColor})`; // Use background for text box
-            ctx.globalAlpha = 0.85; // Slightly less transparent background
-             ctx.fillRect(midX + offsetX - textWidth/2 - 3, midY + offsetY - 9, textWidth + 6, 12); // Slightly larger background rect
+            ctx.globalAlpha = 0.9; // Slightly less transparent background
+             // Adjust background rectangle size and position based on font size
+            ctx.fillRect(midX + offsetX - textWidth/2 - 4, midY + offsetY - 10, textWidth + 8, 14);
 
             // Draw text on top - Use edge color for weight text
-             ctx.fillStyle = edgeColor;
+             ctx.fillStyle = edgeColor; // Use the stroke color for the text
              ctx.globalAlpha = 1.0; // Make text fully opaque
             ctx.fillText(text, midX + offsetX, midY + offsetY);
              ctx.globalAlpha = 1.0; // Reset alpha
@@ -616,8 +653,8 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
 
             // Draw node ID (inside the node) - Use stroke color for visibility
-            ctx.fillStyle = strokeColor;
-            ctx.font = 'bold 14px Arial'; // Increase font size slightly
+            ctx.fillStyle = strokeColor; // Use border color for text to ensure contrast against fill
+            ctx.font = 'bold 15px Arial'; // Ensure node ID is large enough
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(node.id.toString(), node.x, node.y);
@@ -726,9 +763,11 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
      if (category === 'graph') {
          // Reset graph to a new random one or keep the current structure?
          // Option 1: Keep current edited structure, just reset algorithm state
-         initializeGraph(graph);
+          // initializeGraph(graph); // Keep user's edits
+          setIsGenerated(false); // Ensure it's marked as not freshly generated
+          resetVisualization(); // Just reset the algorithm state
          // Option 2: Generate a completely new random graph
-         // initializeGraph();
+         // initializeGraph(); // Generate new random
      } else {
          // For array, reset based on current input value or generate new random
          const currentArray = parseArrayInput(inputValue);
@@ -740,8 +779,14 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
          }
 
      }
-     // resetVisualization is called within initializeGraph/generateRandomArray
+     // resetVisualization is called within initializeGraph/generateRandomArray or explicitly above
   };
+
+
+  const handleRandomizeGraph = () => {
+      initializeGraph(); // This generates a new random graph and resets visualization
+      setIsGenerated(true); // Mark as generated
+  }
 
   const handleSpeedChange = (value: number[]) => {
     setSpeed(MAX_SPEED + MIN_SPEED - value[0]);
@@ -774,7 +819,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
           {isGraphCategory ? (
              // Graph controls (delegated to GraphEditor, plus start node selection)
               <>
-                  <Button onClick={() => initializeGraph()} variant="outline" size="sm" className="w-full">
+                  <Button onClick={handleRandomizeGraph} variant="outline" size="sm" className="w-full">
                       <ShuffleIcon className="mr-2 h-4 w-4" /> Generate Random Graph
                   </Button>
 
@@ -884,14 +929,14 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
          <Card className="flex-grow">
             <CardHeader>
                 <CardTitle>Visualization</CardTitle>
-                <CardDescription className={cn("transition-opacity duration-300 min-h-[1.2em]", steps.length > 0 ? 'opacity-100' : 'opacity-50')}>
-                     {currentExplanation || '\u00A0'} {/* Non-breaking space */}
+                <CardDescription className={cn("transition-opacity duration-300 min-h-[1.5em]", steps.length > 0 ? 'opacity-100' : 'opacity-50')}>
+                     {currentExplanation || '\u00A0'} {/* Non-breaking space, increased min-height */}
                 </CardDescription>
             </CardHeader>
              {/* Conditional Rendering: Canvas for Arrays, GraphEditor for Graphs */}
              {isGraphCategory ? (
-                 <CardContent className="aspect-[2/1] p-0 overflow-hidden relative">
-                    {/* GraphEditor is now only for interactive editing */}
+                 <CardContent className="aspect-[2/1] p-0 overflow-hidden relative border rounded-b-lg">
+                    {/* GraphEditor for interactive editing */}
                     <GraphEditor
                         graph={graph}
                         onGraphChange={handleGraphChange}
@@ -905,20 +950,19 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                         width="800"
                         height="400"
                         className={cn(
-                            "absolute top-0 left-0 w-full h-full",
+                            "absolute top-0 left-0 w-full h-full rounded-b-lg", // Apply rounding
                             isPlaying ? "z-10 pointer-events-none bg-background/10" : "z-0 pointer-events-none bg-transparent" // Layer control
                              )}
                      ></canvas>
                  </CardContent>
              ) : (
                  // Original Canvas for Array Visualizations
-                 <CardContent className="aspect-[2/1] p-0 overflow-hidden relative">
+                 <CardContent className="aspect-[2/1] p-0 overflow-hidden relative border rounded-b-lg">
                      <canvas
                         ref={canvasRef}
                         width="800"
                         height="400"
-                        // className="absolute top-0 left-0 w-full h-full bg-muted/30 rounded-b-lg border-t"
-                         className="absolute top-0 left-0 w-full h-full bg-transparent rounded-b-lg border-t" // Use transparent background
+                         className="absolute top-0 left-0 w-full h-full bg-transparent rounded-b-lg" // Use transparent background, ensure rounding
                      ></canvas>
                  </CardContent>
              )}
@@ -929,8 +973,8 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
              <Card>
                  <CardHeader><CardTitle className="text-lg">Disjoint Set State</CardTitle></CardHeader>
                  <CardContent className="text-xs overflow-x-auto bg-muted/50 p-2 rounded">
-                     <pre className="font-mono">Parent: {JSON.stringify(currentStepData.dsuState?.parent)}</pre>
-                     <pre className="font-mono">Rank:   {JSON.stringify(currentStepData.dsuState?.rank)}</pre>
+                     <pre className="font-mono whitespace-pre-wrap break-all">Parent: {JSON.stringify(currentStepData.dsuState?.parent)}</pre>
+                     <pre className="font-mono whitespace-pre-wrap break-all">Rank:   {JSON.stringify(currentStepData.dsuState?.rank)}</pre>
                  </CardContent>
              </Card>
          )}

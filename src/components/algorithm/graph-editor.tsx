@@ -28,7 +28,7 @@ interface GraphEditorProps {
     readOnly?: boolean; // Make canvas non-interactive if true
 }
 
-const NODE_RADIUS = 20; // Match visualizer
+const NODE_RADIUS = 22; // Match visualizer's increased radius
 const EDGE_HIT_WIDTH = 8; // Wider area for clicking edges
 
 const GraphEditor: React.FC<GraphEditorProps> = ({
@@ -108,19 +108,19 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
             // Draw edge weight (similar to visualizer)
             const midX = (sourceNode.x + targetNode.x) / 2;
             const midY = (sourceNode.y + targetNode.y) / 2;
-            ctx.font = 'bold 11px Arial'; // Match visualizer
+            ctx.font = 'bold 12px Arial'; // Match visualizer weight font size
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
              const angle = Math.atan2(targetNode.y - sourceNode.y, targetNode.x - sourceNode.x);
-            const offsetX = Math.sin(angle) * 10; // Match visualizer offset
-            const offsetY = -Math.cos(angle) * 10;
+            const offsetX = Math.sin(angle) * 15; // Match visualizer offset
+            const offsetY = -Math.cos(angle) * 15;
              const text = edge.weight.toString();
              const textWidth = ctx.measureText(text).width;
 
             // Small background for readability
             ctx.fillStyle = `hsl(${backgroundColor})`;
-            ctx.globalAlpha = 0.85;
-            ctx.fillRect(midX + offsetX - textWidth / 2 - 3, midY + offsetY - 9, textWidth + 6, 12); // Match visualizer size
+            ctx.globalAlpha = 0.9; // Match visualizer alpha
+            ctx.fillRect(midX + offsetX - textWidth / 2 - 4, midY + offsetY - 10, textWidth + 8, 14); // Match visualizer size
 
             // Text itself - use edge stroke color for consistency
             ctx.fillStyle = ctx.strokeStyle; // Use the same color as the line
@@ -161,8 +161,8 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
 
 
             // Draw node ID - Use stroke color for contrast
-            ctx.fillStyle = ctx.strokeStyle;
-            ctx.font = 'bold 14px Arial'; // Match visualizer font
+            ctx.fillStyle = ctx.strokeStyle; // Use stroke color for text inside node
+            ctx.font = 'bold 15px Arial'; // Match visualizer node ID font size
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(node.id.toString(), node.x, node.y);
@@ -346,7 +346,7 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
 
         const newEdge: Edge = {
             // Use a more robust ID generation if needed, ensure uniqueness
-            id: `${pendingEdge.source}-${pendingEdge.target}-${Date.now()}`, // Simple unique ID for now
+            id: `edge-${pendingEdge.source}-${pendingEdge.target}-${Date.now()}`, // Use "edge-" prefix
             source: pendingEdge.source,
             target: pendingEdge.target,
             weight: weight,
@@ -388,7 +388,7 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
 
          setEdges(prevEdges => prevEdges.map(edge =>
               // Update weight and potentially the ID if it includes weight
-             edge.id === editingEdge.id ? { ...edge, weight: weight, id: `${edge.source}-${edge.target}-${weight}` } : edge
+             edge.id === editingEdge.id ? { ...edge, weight: weight, id: `edge-${edge.source}-${edge.target}-${weight}` } : edge // Keep "edge-" prefix
          ));
          setIsWeightModalOpen(false);
          setEditingEdge(null); // Deselect after edit
