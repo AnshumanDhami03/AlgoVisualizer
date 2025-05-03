@@ -1,3 +1,4 @@
+
 // src/lib/algorithms/graph/kruskals.ts
 'use client'; // If using DSU inside, might need client context depending on usage
 
@@ -31,7 +32,7 @@ export function getKruskalsSteps(graph: Graph): GraphAlgorithmStep[] {
     mstEdges: [],
     highlightedNodes: [],
     highlightedEdges: sortedEdges.map(e => e.id), // Highlight all edges being sorted
-    message: `Sorting all ${sortedEdges.length} edges by weight (ascending). [${sortedEdges.map(e => e.weight).join(', ')}]`,
+    message: `Sorting all ${sortedEdges.length} edges by weight (ascending).`, // Simplified message
     dsuState: undefined,
   });
 
@@ -45,7 +46,7 @@ export function getKruskalsSteps(graph: Graph): GraphAlgorithmStep[] {
     mstEdges: [],
     highlightedNodes: nodeIds, // Highlight all nodes for DSU init
     highlightedEdges: [],
-    message: "Initializing Disjoint Set Union (DSU) structure. Each node is its own set.",
+    message: "Initializing Disjoint Set Union (DSU). Each node is its own set.", // Simplified message
     dsuState: dsu.getState(),
   });
 
@@ -58,7 +59,7 @@ export function getKruskalsSteps(graph: Graph): GraphAlgorithmStep[] {
       highlightedNodes: [edge.source, edge.target],
       highlightedEdges: [edge.id],
       candidateEdge: edge,
-      message: `Considering edge ${edge.id} (${edge.source}-${edge.target}) with weight ${edge.weight}.`,
+      message: `Considering edge between node ${edge.source} and node ${edge.target} (weight ${edge.weight}).`, // Simplified
       dsuState: dsu.getState(),
     });
 
@@ -72,7 +73,7 @@ export function getKruskalsSteps(graph: Graph): GraphAlgorithmStep[] {
       highlightedNodes: [edge.source, edge.target], // Keep highlighting nodes
       highlightedEdges: [edge.id], // Keep highlighting edge
       candidateEdge: edge,
-      message: `Checking if nodes ${edge.source} (root: ${rootSource}) and ${edge.target} (root: ${rootTarget}) are already connected using DSU.`,
+      message: `Checking connectivity: Node ${edge.source} (root: ${rootSource}), Node ${edge.target} (root: ${rootTarget}).`, // Simplified
       dsuState: dsu.getState(), // Show DSU state before union attempt
     });
 
@@ -89,7 +90,7 @@ export function getKruskalsSteps(graph: Graph): GraphAlgorithmStep[] {
         highlightedNodes: [edge.source, edge.target],
         highlightedEdges: mstEdges.map(e => e.id), // Highlight all MST edges + current edge
         candidateEdge: edge,
-        message: `Nodes ${edge.source} and ${edge.target} are not connected. Adding edge ${edge.id} to MST. Performing DSU union. MST Cost: ${currentCost}.`,
+        message: `Nodes ${edge.source} & ${edge.target} not connected. Added edge to MST. Merging sets. MST Cost: ${currentCost}.`, // Simplified
         dsuState: dsu.getState(), // Show DSU state after union
       });
     } else {
@@ -100,7 +101,7 @@ export function getKruskalsSteps(graph: Graph): GraphAlgorithmStep[] {
         highlightedNodes: [edge.source, edge.target],
         highlightedEdges: mstEdges.map(e => e.id), // Highlight only existing MST edges
         candidateEdge: edge, // Still show the candidate edge, but faded/rejected
-        message: `Nodes ${edge.source} and ${edge.target} are already connected (same root ${rootSource}). Skipping edge ${edge.id} to avoid cycle.`,
+        message: `Nodes ${edge.source} & ${edge.target} already connected (root ${rootSource}). Skipping edge to avoid cycle.`, // Simplified
         dsuState: dsu.getState(),
       });
     }
@@ -112,9 +113,11 @@ export function getKruskalsSteps(graph: Graph): GraphAlgorithmStep[] {
     mstEdges: [...mstEdges],
     highlightedNodes: [],
     highlightedEdges: mstEdges.map(e => e.id),
-    message: `Kruskal's algorithm complete. Final MST Cost: ${currentCost}. Edges: ${mstEdges.length}`,
+    message: `Kruskal's algorithm complete. Final MST Cost: ${currentCost} (${mstEdges.length} edges).`, // Simplified
     dsuState: dsu.getState(),
   });
 
   return steps;
 }
+
+    

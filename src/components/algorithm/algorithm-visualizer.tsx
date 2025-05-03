@@ -77,22 +77,21 @@ const ALGORITHM_MAP: Record<string, Record<string, Function>> = {
 // Helper to generate a random graph, ensuring connectivity
 const generateRandomGraph = (numNodes = 7, edgeDensity = 0.35): Graph => {
     const nodes: Node[] = [];
-    let edges: Edge[] = [];
+    const edges: Edge[] = [];
     const canvasWidth = GRAPH_CANVAS_WIDTH;
     const canvasHeight = GRAPH_CANVAS_HEIGHT;
-    const padding = 100; // Keep padding generous
-    const minNodeDistance = NODE_RADIUS * 5; // Increased minimum distance
+    const padding = NODE_RADIUS * 3; // Padding around edges
+    const minNodeDistance = NODE_RADIUS * 5.5; // Increased minimum distance between nodes
 
-    // Generate node positions somewhat spread out, avoiding overlaps
+    // Generate node positions, trying to space them out
     for (let i = 0; i < numNodes; i++) {
         let x, y, tooClose;
         let attempts = 0;
-        const maxAttempts = 100; // Allow more attempts for spacing
+        const maxAttempts = 150; // Increase attempts for better spacing
         do {
             tooClose = false;
             x = Math.random() * (canvasWidth - 2 * padding) + padding;
             y = Math.random() * (canvasHeight - 2 * padding) + padding;
-            // Check distance from existing nodes
             for (const existingNode of nodes) {
                 const distSq = (x - existingNode.x) ** 2 + (y - existingNode.y) ** 2;
                 if (distSq < minNodeDistance ** 2) {
@@ -103,37 +102,29 @@ const generateRandomGraph = (numNodes = 7, edgeDensity = 0.35): Graph => {
             attempts++;
         } while (tooClose && attempts < maxAttempts);
 
+        // If still too close after max attempts, place it anyway (fallback)
         nodes.push({ id: i, x, y });
     }
 
-    // Generate edges based on density
-    const edgeSet = new Set<string>(); // Avoid duplicate edges (e.g., 0-1 and 1-0) and self-loops
+    // Generate edges based on density, allowing cycles
+    const edgeSet = new Set<string>(); // Stores "node1-node2" (canonical order) to avoid duplicates
     for (let i = 0; i < numNodes; i++) {
-        for (let j = i + 1; j < numNodes; j++) { // Iterate j from i + 1 to avoid self-loops and duplicates
+        for (let j = i + 1; j < numNodes; j++) {
             if (Math.random() < edgeDensity) {
-                const weight = Math.floor(Math.random() * 20) + 1; // Weight between 1 and 20
-                const edgeId = `edge-${i}-${j}-${weight}`; // Base ID for checking existence
-
-                // Check if an edge between i and j already exists *without* considering weight in the check
-                let exists = false;
-                edges.forEach(existingEdge => {
-                    if ((existingEdge.source === i && existingEdge.target === j) || (existingEdge.source === j && existingEdge.target === i)) {
-                        exists = true;
-                    }
-                });
-
-                if (!exists) {
-                    edges.push({ id: edgeId, source: i, target: j, weight });
-                    edgeSet.add(`${i}-${j}`); // Add canonical representation to set
+                const weight = Math.floor(Math.random() * 20) + 1; // Weight 1-20
+                const canonicalEdgeId = `${i}-${j}`; // Use canonical ID for set check
+                if (!edgeSet.has(canonicalEdgeId)) {
+                    edges.push({ id: `edge-${i}-${j}-${weight}`, source: i, target: j, weight });
+                    edgeSet.add(canonicalEdgeId);
                 }
             }
         }
     }
 
-    // Ensure graph connectivity
+    // --- Ensure Graph Connectivity ---
     if (nodes.length > 1) {
-        const adj: Map<number, number[]> = new Map();
-        nodes.forEach(node => adj.set(node.id, [])); // Initialize adjacency list
+        const adj = new Map<number, number[]>();
+        nodes.forEach(node => adj.set(node.id, []));
         edges.forEach(edge => {
             adj.get(edge.source)?.push(edge.target);
             adj.get(edge.target)?.push(edge.source);
@@ -142,6 +133,7 @@ const generateRandomGraph = (numNodes = 7, edgeDensity = 0.35): Graph => {
         const visited = new Set<number>();
         const components: number[][] = [];
 
+        // Find connected components using BFS
         for (const node of nodes) {
             if (!visited.has(node.id)) {
                 const currentComponent: number[] = [];
@@ -156,7 +148,7 @@ const generateRandomGraph = (numNodes = 7, edgeDensity = 0.35): Graph => {
                         if (!visited.has(v)) {
                             visited.add(v);
                             queue.push(v);
-                            currentComponent.push(v); // Add node ID to component list (was v.id before which is wrong)
+                            currentComponent.push(v);
                         }
                     }
                 }
@@ -164,32 +156,29 @@ const generateRandomGraph = (numNodes = 7, edgeDensity = 0.35): Graph => {
             }
         }
 
-
-        // If more than one component, add edges to connect them
+        // If more than one component, add minimum edges to connect them
         if (components.length > 1) {
             // console.log(`Graph is disconnected with ${components.length} components. Adding edges...`);
             for (let i = 0; i < components.length - 1; i++) {
                 const compA = components[i];
                 const compB = components[i + 1];
-                // Pick random nodes from each component to connect
+                // Pick random nodes from each component
                 const nodeAId = compA[Math.floor(Math.random() * compA.length)];
                 const nodeBId = compB[Math.floor(Math.random() * compB.length)];
 
                 // Ensure the edge doesn't already exist
-                 const canonicalEdgeId = nodeAId < nodeBId ? `${nodeAId}-${nodeBId}` : `${nodeBId}-${nodeAId}`;
-                 if (!edgeSet.has(canonicalEdgeId)) {
-                     const weight = Math.floor(Math.random() * 15) + 5; // Weight for connecting edges
-                     const edgeId = `connect-${nodeAId}-${nodeBId}-${weight}`;
-                     edges.push({ id: edgeId, source: nodeAId, target: nodeBId, weight });
-                     edgeSet.add(canonicalEdgeId); // Add to set to prevent duplicates
+                const canonicalEdgeId = nodeAId < nodeBId ? `${nodeAId}-${nodeBId}` : `${nodeBId}-${nodeAId}`;
+                if (!edgeSet.has(canonicalEdgeId)) {
+                    const weight = Math.floor(Math.random() * 15) + 5; // Weight for connecting edges
+                    const edgeId = `connect-${nodeAId}-${nodeBId}-${weight}`;
+                    edges.push({ id: edgeId, source: nodeAId, target: nodeBId, weight });
+                    edgeSet.add(canonicalEdgeId);
                     // console.log(`Added edge ${edgeId} to connect components.`);
 
-                    // Update adjacency list for subsequent checks if needed (though one pass is usually enough)
-                    adj.get(nodeAId)?.push(nodeBId);
-                    adj.get(nodeBId)?.push(nodeAId);
-                 } else {
-                      // console.log(`Skipping edge between ${nodeAId} and ${nodeBId} - already exists.`);
-                 }
+                    // Update adjacency list (optional for next iteration if needed, but usually one pass is enough)
+                     adj.get(nodeAId)?.push(nodeBId);
+                     adj.get(nodeBId)?.push(nodeAId);
+                }
             }
         }
          // console.log("Final generated graph:", { nodes, edges });
@@ -362,8 +351,13 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
      // Immediately draw the current state after reset
       requestAnimationFrame(() => { // Ensure canvas context is ready
         if (category === 'graph') {
+            // Determine the start node ID for persistent highlighting in reset state
+             let persistentStartId: number | undefined = undefined;
+             if (algorithmId === 'prims-algorithm') {
+                 persistentStartId = startNode ?? undefined;
+             }
             // Draw the initial state of the graph on the visualization canvas
-           drawGraphVisualization(graph, [], [], [], undefined, algorithmId === 'prims-algorithm' ? startNode ?? undefined : undefined);
+           drawGraphVisualization(graph, [], [], [], undefined, persistentStartId);
         } else {
            drawArray(array); // Draw initial array state
         }
@@ -434,6 +428,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
              requestAnimationFrame(() => {
                 const firstStep = newSteps[0];
                  if (isGraphStep(firstStep)) {
+                    // Use startNodeId from the first step if available (especially for Prim's)
                     drawGraphVisualization(firstStep.graph, firstStep.mstEdges, firstStep.highlightedNodes, firstStep.highlightedEdges, firstStep.candidateEdge, firstStep.startNodeId);
                  } else if (isArrayStep(firstStep)) {
                     drawArray(firstStep.array, firstStep.highlight, firstStep.pivot, firstStep.sortedIndices, firstStep.target, firstStep.foundIndex);
@@ -701,9 +696,11 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
     requestAnimationFrame(() => {
          if (isGraphStep(currentStep)) {
-             const { graph: currentGraph, mstEdges, highlightedNodes, highlightedEdges, candidateEdge } = currentStep;
+             const { graph: currentGraph, mstEdges, highlightedNodes, highlightedEdges, candidateEdge, startNodeId: stepStartNodeId } = currentStep;
+              // Use the step's startNodeId if provided (for Prim's), otherwise use the component's state (needed for reset or if not Prim's)
+              const currentPersistentStartId = stepStartNodeId ?? (algorithmId === 'prims-algorithm' ? startNode ?? undefined : undefined);
              // Use the determined persistentStartId for drawing ON THE VISUALIZATION CANVAS
-             drawGraphVisualization(currentGraph, mstEdges, highlightedNodes, highlightedEdges, candidateEdge, persistentStartId);
+             drawGraphVisualization(currentGraph, mstEdges, highlightedNodes, highlightedEdges, candidateEdge, currentPersistentStartId);
          } else if (isArrayStep(currentStep)) {
              const { array: stepArray, highlight, pivot, sortedIndices, target, foundIndex } = currentStep;
              drawArray(stepArray, highlight, pivot, sortedIndices, target, foundIndex);
@@ -784,7 +781,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
          }
 
      }
-     // resetVisualization is called within generateRandomArray or explicitly above
+     // resetVisualization is called within generateRandomArray/initializeGraph or explicitly above
   };
 
 
@@ -983,8 +980,24 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
              <Card>
                  <CardHeader><CardTitle className="text-lg">Disjoint Set State</CardTitle></CardHeader>
                  <CardContent className="text-xs overflow-x-auto bg-muted/50 p-2 rounded">
-                     <pre className="font-mono whitespace-pre-wrap break-all">Parent: {JSON.stringify(currentStepData.dsuState?.parent)}</pre>
-                     <pre className="font-mono whitespace-pre-wrap break-all">Rank:   {JSON.stringify(currentStepData.dsuState?.rank)}</pre>
+                     {/* Simpler DSU display */}
+                     <div>
+                        <strong>Parent pointers:</strong>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono">
+                           {Object.entries(currentStepData.dsuState.parent).map(([node, parent]) => (
+                               <span key={node}>{node} → {parent}{node === parent ? ' (root)' : ''}</span>
+                           ))}
+                        </div>
+                     </div>
+                     <Separator className="my-2" />
+                      <div>
+                        <strong>Ranks:</strong>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono">
+                             {Object.entries(currentStepData.dsuState.rank).map(([node, rank]) => (
+                                <span key={node}>{node}: {rank}</span>
+                             ))}
+                        </div>
+                     </div>
                  </CardContent>
              </Card>
          )}
@@ -992,3 +1005,5 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
     </div>
   );
 }
+
+    
