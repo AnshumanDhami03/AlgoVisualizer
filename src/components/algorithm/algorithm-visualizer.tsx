@@ -401,18 +401,18 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
     const activeGraph = graphToDraw ?? (isUsingEditorGraph ? editorGraph : visualizerGraph);
 
     requestAnimationFrame(() => {
-        if (category === 'graph') {
+        if (category === 'graph' && activeGraph) { // Add check for activeGraph existence
             let persistentStartId: number | undefined = undefined;
             if (algorithmId === 'prims-algorithm') {
                  persistentStartId = startNode ?? undefined;
             }
            drawGraphVisualization(activeGraph, [], [], [], undefined, persistentStartId);
-        } else {
+        } else if (category === 'sort' || category === 'search'){ // Only draw array if relevant category
            drawArray(array);
         }
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category, array, editorGraph, visualizerGraph, isUsingEditorGraph, startNode, algorithmId]);
+  }, [category, array, editorGraph, visualizerGraph, isUsingEditorGraph, startNode, algorithmId]); // Added drawArray to deps
 
 
  const startVisualization = () => {
@@ -484,12 +484,14 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
             setIsPlaying(true);
              requestAnimationFrame(() => {
                 const firstStep = newSteps[0];
-                 if (isGraphStep(firstStep)) {
-                     // Use startNodeId from the first step or the selected startNode
-                     const firstStepStartNodeId = firstStep.startNodeId ?? startNode ?? undefined;
-                    drawGraphVisualization(firstStep.graph, firstStep.mstEdges, firstStep.highlightedNodes, firstStep.highlightedEdges, firstStep.candidateEdge, firstStepStartNodeId);
-                 } else if (isArrayStep(firstStep)) {
-                    drawArray(firstStep.array, firstStep.highlight, firstStep.pivot, firstStep.sortedIndices, firstStep.target, firstStep.foundIndex);
+                 if (firstStep) { // Ensure firstStep exists
+                    if (isGraphStep(firstStep)) {
+                        // Use startNodeId from the first step or the selected startNode
+                        const firstStepStartNodeId = firstStep.startNodeId ?? startNode ?? undefined;
+                        drawGraphVisualization(firstStep.graph, firstStep.mstEdges, firstStep.highlightedNodes, firstStep.highlightedEdges, firstStep.candidateEdge, firstStepStartNodeId);
+                    } else if (isArrayStep(firstStep)) {
+                        drawArray(firstStep.array, firstStep.highlight, firstStep.pivot, firstStep.sortedIndices, firstStep.target, firstStep.foundIndex);
+                    }
                  }
              });
 
@@ -702,6 +704,22 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
   // --- Effects for Drawing and Animation ---
 
  useEffect(() => {
+     // Guard against accessing steps array when empty or index out of bounds
+     if (!steps || steps.length === 0 || currentStepIndex < 0 || currentStepIndex >= steps.length) {
+        // Potentially reset to initial state or do nothing if no steps yet
+         // If resetting, ensure the appropriate graph/array is drawn
+         requestAnimationFrame(() => {
+             const activeGraph = isUsingEditorGraph ? editorGraph : visualizerGraph;
+             if (category === 'graph' && activeGraph) {
+                 drawGraphVisualization(activeGraph, [], [], [], undefined, startNode ?? undefined);
+             } else if ((category === 'sort' || category === 'search') && array) {
+                 drawArray(array);
+             }
+         });
+         return;
+     }
+
+
      let currentStep = steps[currentStepIndex];
      const isAnimating = steps.length > 0 && currentStepIndex < steps.length;
      const activeGraph = isUsingEditorGraph ? editorGraph : visualizerGraph; // Use the correct graph source
@@ -717,14 +735,14 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
           requestAnimationFrame(() => {
              if (category === 'graph' && activeGraph) { // Check activeGraph
                  drawGraphVisualization(activeGraph, [], [], [], undefined, persistentStartId);
-             } else if (array) {
+             } else if ((category === 'sort' || category === 'search') && array) {
                  drawArray(array);
              }
           });
          return;
      }
 
-     if (!currentStep) return;
+     if (!currentStep) return; // Should be covered by the initial guard, but for safety
 
     requestAnimationFrame(() => {
          if (isGraphStep(currentStep)) {
@@ -749,7 +767,9 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
       }, speed);
     } else if (isPlaying && currentStepIndex >= steps.length - 1 && steps.length > 0) {
         setIsPlaying(false);
-         const lastStepMessage = steps[steps.length -1]?.message || "Finished.";
+         // Guard against accessing message if steps[lastIndex] is undefined
+         const lastStep = steps[steps.length - 1];
+         const lastStepMessage = lastStep?.message || "Finished.";
          toast({ title: "Visualization Complete", description: lastStepMessage });
 
     }
@@ -771,15 +791,17 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
         setIsPlaying(true);
              requestAnimationFrame(() => {
                 const firstStep = steps[0];
-                let persistentStartId = undefined;
-                 if (isGraphStep(firstStep) && algorithmId === 'prims-algorithm') {
-                     persistentStartId = firstStep?.startNodeId ?? startNode ?? undefined;
-                 }
-                 if (isGraphStep(firstStep)) {
-                     drawGraphVisualization(firstStep.graph, firstStep.mstEdges, firstStep.highlightedNodes, firstStep.highlightedEdges, firstStep.candidateEdge, persistentStartId);
-                 } else if (isArrayStep(firstStep)) {
-                     drawArray(firstStep.array, firstStep.highlight, firstStep.pivot, firstStep.sortedIndices, firstStep.target, firstStep.foundIndex);
-                 }
+                if (firstStep) { // Check if firstStep exists
+                    let persistentStartId = undefined;
+                    if (isGraphStep(firstStep) && algorithmId === 'prims-algorithm') {
+                        persistentStartId = firstStep?.startNodeId ?? startNode ?? undefined;
+                    }
+                    if (isGraphStep(firstStep)) {
+                        drawGraphVisualization(firstStep.graph, firstStep.mstEdges, firstStep.highlightedNodes, firstStep.highlightedEdges, firstStep.candidateEdge, persistentStartId);
+                    } else if (isArrayStep(firstStep)) {
+                        drawArray(firstStep.array, firstStep.highlight, firstStep.pivot, firstStep.sortedIndices, firstStep.target, firstStep.foundIndex);
+                    }
+                }
              });
     }
      else {
@@ -819,13 +841,16 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
   // --- Render ---
 
-   const currentStepData = steps[currentStepIndex];
+   // Ensure currentStepData is accessed safely
+   const currentStepData = (steps && currentStepIndex >= 0 && currentStepIndex < steps.length) ? steps[currentStepIndex] : null;
    let currentExplanation = "Ready to visualize.";
+
    if (isPlaying && currentStepData) {
        currentExplanation = currentStepData.message;
    } else if (!isPlaying && steps.length > 0) {
        // Show message of the current step even when paused, or last step if finished
-       const stepToShow = currentStepIndex < steps.length ? steps[currentStepIndex] : steps[steps.length - 1];
+       const indexToShow = currentStepIndex < steps.length ? currentStepIndex : steps.length - 1;
+       const stepToShow = (indexToShow >= 0 && indexToShow < steps.length) ? steps[indexToShow] : null;
        currentExplanation = stepToShow?.message || "Finished.";
    }
 
@@ -887,13 +912,13 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                      <Select
                         value={startNode !== null ? startNode.toString() : ""}
                         onValueChange={handleStartNodeChange}
-                        disabled={activeGraph.nodes.length === 0} // Disable based on *active* graph
+                        disabled={!activeGraph || activeGraph.nodes.length === 0} // Disable based on *active* graph
                      >
                        <SelectTrigger id="start-node-select" className="flex-grow">
                          <SelectValue placeholder="Select node..." />
                        </SelectTrigger>
                        <SelectContent>
-                           {activeGraph.nodes.length > 0 ? (
+                           {activeGraph && activeGraph.nodes.length > 0 ? ( // Check activeGraph exists before accessing nodes
                                 [...activeGraph.nodes].sort((a, b) => a.id - b.id).map(node => (
                                     <SelectItem key={node.id} value={node.id.toString()}>
                                         Node {node.id}
@@ -945,7 +970,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                   />
                   <Button onClick={handleSetArrayData} variant="secondary" size="sm">Set</Button>
                 </div>
-                <Button onClick={() => generateRandomArray(array.length || DEFAULT_ARRAY_SIZE)} variant="outline" size="sm" className="w-full">
+                <Button onClick={() => generateRandomArray(array?.length || DEFAULT_ARRAY_SIZE)} variant="outline" size="sm" className="w-full">
                   <ShuffleIcon className="mr-2 h-4 w-4" /> Randomize Array
                 </Button>
               </div>
@@ -1072,7 +1097,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
          </Card>
 
          {/* Optional: DSU State Visualization for Kruskal's */}
-         {algorithmId === 'kruskals-algorithm' && isGraphStep(currentStepData || {}) && currentStepData?.dsuState && (
+         {algorithmId === 'kruskals-algorithm' && currentStepData && isGraphStep(currentStepData) && currentStepData.dsuState && (
              <Card>
                  <CardHeader><CardTitle className="text-lg">Disjoint Set State</CardTitle></CardHeader>
                  <CardContent className="text-xs overflow-x-auto bg-muted/50 p-2 rounded">

@@ -44,8 +44,13 @@ export async function generateMetadata({ params }: AlgorithmPageProps): Promise<
   const algorithmName = getAlgorithmName(category, algorithm);
 
   if (!algorithmName) {
+    // If algorithm name isn't found, we should handle this appropriately.
+    // Returning a generic title or triggering notFound() here is an option,
+    // but it might be better handled in the page component itself.
+    // For metadata, a generic title is often acceptable.
     return {
-      title: 'Algorithm Not Found',
+      title: 'Algorithm Not Found | AlgoVisualizer',
+      description: 'The requested algorithm visualization could not be found.',
     };
   }
 
@@ -60,12 +65,20 @@ export async function generateMetadata({ params }: AlgorithmPageProps): Promise<
 export default function AlgorithmPage({ params }: AlgorithmPageProps) {
   const { category, algorithm } = params;
 
-  // Validate category and algorithm
+  // Validate category and algorithm FIRST
   if (!isValidAlgorithm(category, algorithm)) {
     notFound(); // Show 404 if the category or algorithm is invalid
   }
 
-  const algorithmName = getAlgorithmName(category, algorithm)!; // We know it's valid here
+  // We now know the algorithm is valid, so get the name
+  const algorithmName = getAlgorithmName(category, algorithm);
+
+  // Double-check algorithmName exists before rendering (though isValidAlgorithm should guarantee this)
+  if (!algorithmName) {
+      console.error(`Algorithm name not found for valid category/algorithm: ${category}/${algorithm}`);
+      notFound(); // Fallback in case logic fails somehow
+  }
+
 
   return (
     <div className="space-y-6">
