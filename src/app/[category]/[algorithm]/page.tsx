@@ -70,7 +70,8 @@ export default function AlgorithmPage({ params }: AlgorithmPageProps) {
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold text-primary">{algorithmName} Visualization</h1>
-      <AlgorithmVisualizer algorithmId={algorithm} category={category} />
+      {/* Ensure category is passed correctly as 'sort', 'search', or 'graph' */}
+      <AlgorithmVisualizer algorithmId={algorithm} category={category as 'sort' | 'search' | 'graph'} />
     </div>
   );
 }
