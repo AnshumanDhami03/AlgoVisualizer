@@ -1,3 +1,4 @@
+
 // src/components/algorithm/graph-editor.tsx
 "use client";
 
@@ -27,7 +28,7 @@ interface GraphEditorProps {
     readOnly?: boolean; // Make canvas non-interactive if true
 }
 
-const NODE_RADIUS = 18;
+const NODE_RADIUS = 20; // Match visualizer
 const EDGE_HIT_WIDTH = 8; // Wider area for clicking edges
 
 const GraphEditor: React.FC<GraphEditorProps> = ({
@@ -60,8 +61,12 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
 
     // Function to call onGraphChange when internal state changes
     const triggerGraphChange = useCallback(() => {
-        onGraphChange({ nodes: [...nodes], edges: [...edges] });
+        // Create clean copies without circular references if any state holds references
+        const cleanNodes = nodes.map(n => ({ ...n }));
+        const cleanEdges = edges.map(e => ({ ...e }));
+        onGraphChange({ nodes: cleanNodes, edges: cleanEdges });
     }, [nodes, edges, onGraphChange]);
+
 
     // Draw function
     const draw = useCallback(() => {
@@ -69,6 +74,17 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
+
+        // Get computed styles for theme colors (needed for drawing)
+        const computedStyle = getComputedStyle(document.documentElement);
+        const primaryColor = computedStyle.getPropertyValue('--primary').trim();
+        const primaryFgColor = computedStyle.getPropertyValue('--primary-foreground').trim();
+        const accentColor = computedStyle.getPropertyValue('--accent').trim();
+        const mutedColor = computedStyle.getPropertyValue('--muted').trim();
+        const mutedFgColor = computedStyle.getPropertyValue('--muted-foreground').trim();
+        const backgroundColor = computedStyle.getPropertyValue('--background').trim();
+        const foregroundColor = computedStyle.getPropertyValue('--foreground').trim();
+
 
         ctx.clearRect(0, 0, width, height);
 
@@ -82,26 +98,33 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
             ctx.moveTo(sourceNode.x, sourceNode.y);
             ctx.lineTo(targetNode.x, targetNode.y);
             ctx.lineWidth = 2;
-            ctx.strokeStyle = editingEdge?.id === edge.id ? 'hsl(var(--accent))' : 'hsl(var(--muted-foreground) / 0.5)';
+            // Use accent color if editing, otherwise muted-foreground with alpha
+            ctx.strokeStyle = editingEdge?.id === edge.id ? `hsl(${accentColor})` : `hsla(${mutedFgColor}, 0.5)`;
+            ctx.globalAlpha = editingEdge?.id === edge.id ? 1.0 : 0.5; // Make non-editing edges faded
             ctx.stroke();
+            ctx.globalAlpha = 1.0; // Reset alpha
 
-            // Draw edge weight
+
+            // Draw edge weight (similar to visualizer)
             const midX = (sourceNode.x + targetNode.x) / 2;
             const midY = (sourceNode.y + targetNode.y) / 2;
-             const angle = Math.atan2(targetNode.y - sourceNode.y, targetNode.x - sourceNode.x);
-            const offsetX = Math.sin(angle) * 6;
-            const offsetY = -Math.cos(angle) * 6;
-            ctx.font = '10px Arial';
-            ctx.fillStyle = 'hsl(var(--foreground))';
+            ctx.font = 'bold 11px Arial'; // Match visualizer
             ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
+            ctx.textBaseline = 'bottom';
+             const angle = Math.atan2(targetNode.y - sourceNode.y, targetNode.x - sourceNode.x);
+            const offsetX = Math.sin(angle) * 10; // Match visualizer offset
+            const offsetY = -Math.cos(angle) * 10;
              const text = edge.weight.toString();
              const textWidth = ctx.measureText(text).width;
-             // Small background for readability
-            ctx.fillStyle = 'hsl(var(--background))';
-            ctx.fillRect(midX + offsetX - textWidth / 2 - 2, midY + offsetY - 7, textWidth + 4, 12);
-             // Text itself
-             ctx.fillStyle = editingEdge?.id === edge.id ? 'hsl(var(--accent))' : 'hsl(var(--foreground))';
+
+            // Small background for readability
+            ctx.fillStyle = `hsl(${backgroundColor})`;
+            ctx.globalAlpha = 0.85;
+            ctx.fillRect(midX + offsetX - textWidth / 2 - 3, midY + offsetY - 9, textWidth + 6, 12); // Match visualizer size
+
+            // Text itself - use edge stroke color for consistency
+            ctx.fillStyle = ctx.strokeStyle; // Use the same color as the line
+            ctx.globalAlpha = 1.0;
             ctx.fillText(text, midX + offsetX, midY + offsetY);
         });
 
@@ -113,10 +136,12 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
                 ctx.moveTo(sourceNode.x, sourceNode.y);
                 ctx.lineTo(drawingEdge.x, drawingEdge.y);
                 ctx.lineWidth = 2;
-                ctx.strokeStyle = 'hsl(var(--primary) / 0.7)';
+                ctx.strokeStyle = `hsl(${primaryColor})`; // Use primary color for drawing line
+                ctx.globalAlpha = 0.7;
                 ctx.setLineDash([5, 5]);
                 ctx.stroke();
                 ctx.setLineDash([]);
+                ctx.globalAlpha = 1.0;
             }
         }
 
@@ -124,16 +149,20 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
         nodes.forEach(node => {
             ctx.beginPath();
             ctx.arc(node.x, node.y, NODE_RADIUS, 0, Math.PI * 2);
-            ctx.fillStyle = draggingNode === node.id || drawingEdge?.source === node.id ? 'hsl(var(--primary))' : 'hsl(var(--muted))';
+
+            // Fill Style - Use primary when dragging/drawing from, else muted
+            ctx.fillStyle = draggingNode === node.id || drawingEdge?.source === node.id ? `hsl(${primaryColor})` : `hsl(${mutedColor})`;
              ctx.fill();
-             ctx.strokeStyle = draggingNode === node.id || drawingEdge?.source === node.id ? 'hsl(var(--primary-foreground))' : 'hsl(var(--muted-foreground))';
+
+            // Stroke Style - Use corresponding foreground for contrast
+             ctx.strokeStyle = draggingNode === node.id || drawingEdge?.source === node.id ? `hsl(${primaryFgColor})` : `hsl(${mutedFgColor})`;
             ctx.lineWidth = 1.5;
             ctx.stroke();
 
 
-            // Draw node ID
-            ctx.fillStyle = draggingNode === node.id || drawingEdge?.source === node.id ? 'hsl(var(--primary-foreground))' : 'hsl(var(--foreground))';
-            ctx.font = 'bold 12px Arial';
+            // Draw node ID - Use stroke color for contrast
+            ctx.fillStyle = ctx.strokeStyle;
+            ctx.font = 'bold 14px Arial'; // Match visualizer font
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(node.id.toString(), node.x, node.y);
@@ -224,14 +253,16 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
                  setDraggingNode(null);
                  setDrawingEdge(null);
              } else {
-                 // Clicked on empty space: Add a new node
-                 const newNode: Node = { id: nextNodeId, x, y };
-                 setNodes([...nodes, newNode]);
-                 setNextNodeId(prevId => prevId + 1);
+                 // Clicked on empty space: Add a new node if within bounds
+                 if (x > NODE_RADIUS && x < width - NODE_RADIUS && y > NODE_RADIUS && y < height - NODE_RADIUS) {
+                     const newNode: Node = { id: nextNodeId, x, y };
+                     setNodes(prevNodes => [...prevNodes, newNode]);
+                     setNextNodeId(prevId => prevId + 1);
+                     triggerGraphChange(); // Update parent immediately after adding node
+                 }
                  setDraggingNode(null);
                  setDrawingEdge(null);
                  setEditingEdge(null);
-                 triggerGraphChange(); // Update parent immediately after adding node
              }
 
         }
@@ -243,9 +274,12 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
         const { x, y } = getMousePos(event);
 
         if (draggingNode !== null) {
+            // Keep node within canvas bounds
+            const boundedX = Math.max(NODE_RADIUS, Math.min(width - NODE_RADIUS, x));
+            const boundedY = Math.max(NODE_RADIUS, Math.min(height - NODE_RADIUS, y));
             setNodes(prevNodes =>
                 prevNodes.map(node =>
-                    node.id === draggingNode ? { ...node, x, y } : node
+                    node.id === draggingNode ? { ...node, x: boundedX, y: boundedY } : node
                 )
             );
              // Debounce or throttle triggerGraphChange if performance is an issue
@@ -277,17 +311,23 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
                 } else {
                      toast({ title: "Edge Exists", description: "An edge between these nodes already exists.", variant: "destructive" });
                 }
-            } else {
-                 toast({ title: "Invalid Edge Target", description: "Please drag to a different node to create an edge.", variant: "destructive" });
+            } else if (!targetNode) {
+                 // Don't show error if mouse up on empty space, just cancel drawing
+            }
+             else {
+                 // Target node is the same as source node
+                 toast({ title: "Invalid Edge Target", description: "Cannot create an edge from a node to itself.", variant: "destructive" });
             }
         }
 
         // Stop dragging or drawing
         setDraggingNode(null);
         setDrawingEdge(null);
-        // Don't reset editingEdge on mouse up, allow deletion/editing after selection
-        // Resetting it here would require clicking again.
-        // setEditingEdge(null);
+        // Deselect edge if clicking empty space on mouse up
+        if (!getNodeAtPos(x,y) && !getEdgeAtPos(x,y)){
+            setEditingEdge(null);
+        }
+
 
         // Trigger change if nodes were moved (even if not dragging now)
         if (draggingNode !== null) {
@@ -305,19 +345,21 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
         }
 
         const newEdge: Edge = {
-            id: `${pendingEdge.source}-${pendingEdge.target}-${weight}`, // Simple ID
+            // Use a more robust ID generation if needed, ensure uniqueness
+            id: `${pendingEdge.source}-${pendingEdge.target}-${Date.now()}`, // Simple unique ID for now
             source: pendingEdge.source,
             target: pendingEdge.target,
             weight: weight,
         };
 
-        setEdges([...edges, newEdge]);
+        setEdges(prevEdges => [...prevEdges, newEdge]);
         setIsWeightModalOpen(false);
         setPendingEdge(null);
         triggerGraphChange(); // Update parent after adding edge
     };
 
      // Delete Node Function (example using context menu or button click)
+     // TODO: Add a button or context menu to trigger this
      const deleteNode = (nodeId: number) => {
          if (readOnly) return;
          setNodes(prevNodes => prevNodes.filter(node => node.id !== nodeId));
@@ -345,7 +387,8 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
          }
 
          setEdges(prevEdges => prevEdges.map(edge =>
-             edge.id === editingEdge.id ? { ...edge, weight: weight, id: `${edge.source}-${edge.target}-${weight}` } : edge // Update ID too
+              // Update weight and potentially the ID if it includes weight
+             edge.id === editingEdge.id ? { ...edge, weight: weight, id: `${edge.source}-${edge.target}-${weight}` } : edge
          ));
          setIsWeightModalOpen(false);
          setEditingEdge(null); // Deselect after edit
@@ -364,6 +407,16 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
 
     return (
         <div className="relative w-full h-full border rounded-md overflow-hidden bg-background">
+             {/* Instruction overlay */}
+            {!readOnly && (
+                <div className={cn(
+                    "absolute top-2 left-2 z-20 p-1.5 bg-background/80 border border-border rounded text-xs text-muted-foreground max-w-[200px]",
+                    "transition-opacity duration-300",
+                     (drawingEdge || draggingNode || isWeightModalOpen || editingEdge) ? "opacity-0 pointer-events-none" : "opacity-100" // Hide instructions during actions
+                     )}>
+                    Click: Add Node | Shift+Drag: Add Edge | Drag: Move | Click Edge: Edit/Delete
+                 </div>
+            )}
             <canvas
                 ref={canvasRef}
                 width={width}
@@ -372,26 +425,22 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
                 onMouseLeave={() => { // Stop actions if mouse leaves canvas
+                    if (draggingNode !== null) triggerGraphChange(); // Ensure position updates if dragging stops outside
                     setDraggingNode(null);
                     setDrawingEdge(null);
-                     // Maybe trigger change if dragging stopped abruptly
-                     // if(draggingNode !== null) triggerGraphChange();
                 }}
                 className={cn(
-                    "cursor-crosshair",
+                    "cursor-crosshair block", // Ensure block display to prevent extra space
                     readOnly && "cursor-not-allowed",
-                    (draggingNode !== null || drawingEdge !== null) && "cursor-grabbing"
+                    draggingNode !== null && "cursor-grabbing",
+                    drawingEdge !== null && "cursor-grabbing" // Also grabbing when drawing edge
                 )}
             />
-            {!readOnly && (
-                <div className="absolute top-2 left-2 p-1 bg-background/80 rounded border text-xs text-muted-foreground max-w-[200px]">
-                    Click: Add Node | Shift+Drag Node: Add Edge | Drag Node: Move | Click Edge: Select/Edit
-                 </div>
-            )}
+
 
              {/* Buttons for selected edge */}
             {editingEdge && !readOnly && (
-                <div className="absolute top-2 right-2 flex space-x-1 p-1 bg-background/80 rounded border">
+                <div className="absolute top-2 right-2 z-20 flex space-x-1 p-1 bg-background/80 rounded border">
                     <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => openEditWeightModal(editingEdge)} aria-label="Edit Edge Weight">
                         <Pencil className="h-4 w-4" />
                     </Button>
@@ -403,7 +452,13 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
 
 
             {/* Weight Input Modal */}
-            <Dialog open={isWeightModalOpen} onOpenChange={setIsWeightModalOpen}>
+            <Dialog open={isWeightModalOpen} onOpenChange={(open) => {
+                setIsWeightModalOpen(open);
+                 if (!open) {
+                     setEditingEdge(null); // Deselect edge when modal closes
+                     setPendingEdge(null);
+                 }
+                }}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>{editingEdge ? 'Edit Edge Weight' : 'Enter Edge Weight'}</DialogTitle>
@@ -432,6 +487,10 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
                                      if (e.key === 'Enter') {
                                          e.preventDefault(); // Prevent form submission if any
                                          if (editingEdge) handleUpdateWeight(); else handleConfirmWeight();
+                                     } else if (e.key === 'Escape'){
+                                         setIsWeightModalOpen(false);
+                                         setEditingEdge(null);
+                                         setPendingEdge(null);
                                      }
                                  }}
                             />
@@ -439,7 +498,7 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
                     </div>
                     <DialogFooter>
                         <DialogClose asChild>
-                             <Button variant="outline" onClick={() => setEditingEdge(null)}>Cancel</Button>
+                             <Button variant="outline">Cancel</Button>
                          </DialogClose>
                          <Button onClick={editingEdge ? handleUpdateWeight : handleConfirmWeight}>
                            {editingEdge ? <><Check className="mr-2 h-4 w-4"/> Update Weight</> : <><Check className="mr-2 h-4 w-4"/> Add Edge</>}
@@ -452,3 +511,4 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
 };
 
 export default GraphEditor;
+

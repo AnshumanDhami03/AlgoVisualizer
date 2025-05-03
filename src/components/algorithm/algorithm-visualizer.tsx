@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
@@ -44,10 +45,12 @@ const MAX_SPEED = 1000; // ms
 const DEFAULT_SPEED = 300; // ms
 
 // Constants for Graph Visualization
-const NODE_RADIUS = 18; // Slightly larger to accommodate text better
+const NODE_RADIUS = 20; // Slightly larger for better visibility
 const EDGE_WIDTH = 2;
 const MST_EDGE_WIDTH = 4;
-const START_NODE_COLOR = "hsl(var(--accent))"; // Color for the start node in Prim's
+const START_NODE_COLOR = "hsl(var(--accent))"; // Color for the start node in Prim's (Orange)
+const PIVOT_COLOR = "#E91E63"; // Pinkish color for pivot (consider theme integration if needed)
+const TARGET_POTENTIAL_COLOR = "#FFC107"; // Yellowish for potential target
 
 // Algorithm Function Mapping
 const ALGORITHM_MAP: Record<string, Record<string, Function>> = {
@@ -68,20 +71,20 @@ const ALGORITHM_MAP: Record<string, Record<string, Function>> = {
     },
 };
 
-// Helper to generate a simple graph for testing
+// Helper to generate a simpler graph for testing
 const generateRandomGraph = (numNodes = 7, edgeProbability = 0.4): Graph => {
     const nodes: Node[] = [];
     const edges: Edge[] = [];
-    const width = 750; // Match canvas width roughly
-    const height = 350; // Match canvas height roughly
-    const padding = 50;
+    const canvasWidth = 700; // Use slightly smaller dimensions for less dense layout
+    const canvasHeight = 350;
+    const padding = 60; // Increase padding to spread nodes more
 
     // Generate node positions somewhat spread out
     for (let i = 0; i < numNodes; i++) {
         nodes.push({
             id: i,
-            x: Math.random() * (width - 2 * padding) + padding,
-            y: Math.random() * (height - 2 * padding) + padding,
+            x: Math.random() * (canvasWidth - 2 * padding) + padding,
+            y: Math.random() * (canvasHeight - 2 * padding) + padding,
         });
     }
 
@@ -92,7 +95,7 @@ const generateRandomGraph = (numNodes = 7, edgeProbability = 0.4): Graph => {
             if (Math.random() < edgeProbability) {
                 const weight = Math.floor(Math.random() * 20) + 1; // Weight between 1 and 20
                 const edgeId = `${i}-${j}-${weight}`;
-                 const reverseEdgeId = `${j}-${i}-${weight}`; // Check for reverse too, just in case
+                const reverseEdgeId = `${j}-${i}-${weight}`; // Check for reverse too, just in case
 
                  if (!edgeSet.has(edgeId) && !edgeSet.has(reverseEdgeId)) {
                      edges.push({ id: edgeId, source: i, target: j, weight });
@@ -102,38 +105,41 @@ const generateRandomGraph = (numNodes = 7, edgeProbability = 0.4): Graph => {
         }
     }
 
-    // Ensure graph is connected (simple approach: add edges if needed)
-     if (nodes.length > 1 && edges.length < nodes.length - 1) {
-         const connectedComponents = new Map<number, number[]>();
-         const visited = new Set<number>();
+     // Ensure graph is connected (simple approach: add edges if needed)
+    if (nodes.length > 1 && edges.length < nodes.length - 1) {
+        // Check connectivity using a simple visited set approach
+        const adj: Map<number, number[]> = new Map();
+        edges.forEach(edge => {
+            if (!adj.has(edge.source)) adj.set(edge.source, []);
+            if (!adj.has(edge.target)) adj.set(edge.target, []);
+            adj.get(edge.source)!.push(edge.target);
+            adj.get(edge.target)!.push(edge.source);
+        });
 
-         const dfs = (nodeId: number, componentId: number) => {
-             visited.add(nodeId);
-             if (!connectedComponents.has(componentId)) {
-                 connectedComponents.set(componentId, []);
-             }
-             connectedComponents.get(componentId)!.push(nodeId);
-             const neighbors = edges.flatMap(e => {
-                 if (e.source === nodeId && !visited.has(e.target)) return [e.target];
-                 if (e.target === nodeId && !visited.has(e.source)) return [e.source];
-                 return [];
-             });
-             neighbors.forEach(neighbor => dfs(neighbor, componentId));
-         };
+        const visited = new Set<number>();
+        const queue = [nodes[0].id];
+        visited.add(nodes[0].id);
 
-         let componentId = 0;
-         nodes.forEach(node => {
-             if (!visited.has(node.id)) {
-                 dfs(node.id, componentId++);
-             }
-         });
+        while(queue.length > 0) {
+            const u = queue.shift()!;
+            const neighbors = adj.get(u) || [];
+            neighbors.forEach(v => {
+                if (!visited.has(v)) {
+                    visited.add(v);
+                    queue.push(v);
+                }
+            });
+        }
 
-         // If more than one component, add edges to connect them
-         if (connectedComponents.size > 1) {
-             const components = Array.from(connectedComponents.values());
-             for (let i = 1; i < components.length; i++) {
-                 const nodeA = components[0][0]; // Node from first component
-                 const nodeB = components[i][0]; // Node from current component
+        // If not all nodes were visited, add edges to connect components
+        if (visited.size < nodes.length) {
+             const visitedNodes = Array.from(visited);
+             const unvisitedNodes = nodes.filter(n => !visited.has(n.id));
+
+             // Connect first unvisited node to a random visited node
+             if (visitedNodes.length > 0 && unvisitedNodes.length > 0) {
+                 const nodeA = visitedNodes[Math.floor(Math.random() * visitedNodes.length)];
+                 const nodeB = unvisitedNodes[0].id;
                  const weight = Math.floor(Math.random() * 15) + 5; // Weight for connecting edges
                  const edgeId = `connect-${nodeA}-${nodeB}-${weight}`;
                  const reverseEdgeId = `connect-${nodeB}-${nodeA}-${weight}`;
@@ -141,11 +147,13 @@ const generateRandomGraph = (numNodes = 7, edgeProbability = 0.4): Graph => {
                  if (!edgeSet.has(edgeId) && !edgeSet.has(reverseEdgeId)) {
                      edges.push({ id: edgeId, source: nodeA, target: nodeB, weight });
                      edgeSet.add(edgeId);
+                     // Recursively call or iteratively connect remaining unvisited (simplified here)
                  }
              }
-         }
-     }
-
+             // Note: This simple connection might not connect *all* components if there were more than 2.
+             // A full DSU-based approach during generation is more robust for guaranteeing connectivity.
+        }
+    }
 
     return { nodes, edges };
 };
@@ -358,9 +366,17 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
             if (!graph || graph.nodes.length === 0) throw new Error("Please provide a valid graph.");
             if (algorithmId === 'prims-algorithm') {
                 if (startNode === null) {
-                    throw new Error("Please select a starting node for Prim's Algorithm.");
+                    // Automatically select the first node if none is selected
+                    const defaultStartNode = graph.nodes[0]?.id ?? null;
+                    if (defaultStartNode === null) {
+                        throw new Error("Graph has no nodes to start Prim's algorithm from.");
+                    }
+                    setStartNode(defaultStartNode); // Set state
+                    toast({title: "Start Node Selected", description: `Using node ${defaultStartNode} as start node for Prim's.`});
+                    newSteps = algorithmFunction(graph, defaultStartNode); // Use default start node
+                } else {
+                     newSteps = algorithmFunction(graph, startNode); // Pass user-selected start node to Prim's
                 }
-                 newSteps = algorithmFunction(graph, startNode); // Pass start node to Prim's
             } else {
                 // Kruskal's doesn't need a start node
                  newSteps = algorithmFunction(graph);
@@ -421,24 +437,31 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
     const barWidth = Math.max(1, availableWidth / n); // Ensure barWidth is at least 1
     const maxVal = Math.max(...currentArrayState, 1);
 
+    // Get computed styles for theme colors
+    const computedStyle = getComputedStyle(document.documentElement);
+    const primaryColor = computedStyle.getPropertyValue('--primary').trim();
+    const secondaryColor = computedStyle.getPropertyValue('--secondary').trim();
+    const accentColor = computedStyle.getPropertyValue('--accent').trim();
+    const foregroundColor = computedStyle.getPropertyValue('--foreground').trim();
+
     currentArrayState.forEach((value, index) => {
       const barHeight = Math.max(1, (value / maxVal) * (height * 0.85)); // Ensure barHeight is at least 1
       const x = spacing + index * (barWidth + spacing);
       const y = height - barHeight - 20; // Leave space at bottom for numbers
 
-      // Determine bar color
-      if (foundIndex === index) ctx.fillStyle = "hsl(var(--accent))"; // Found item (accent)
-      else if (target === value && category === 'search' && !sortedIndices.includes(index)) ctx.fillStyle = "#FFC107"; // Potential target (Yellowish)
-      else if (sortedIndices.includes(index)) ctx.fillStyle = "hsl(var(--secondary))"; // Sorted (secondary)
-      else if (highlight.includes(index)) ctx.fillStyle = "hsl(var(--accent))"; // Highlighted (accent)
-       else if (pivot === index) ctx.fillStyle = "#E91E63"; // Pivot (Pink) - Consider using a theme color?
-      else ctx.fillStyle = "hsl(var(--primary))"; // Default (primary)
+      // Determine bar color using theme variables
+      if (foundIndex === index) ctx.fillStyle = `hsl(${accentColor})`; // Found item (accent)
+      else if (target === value && category === 'search' && !sortedIndices.includes(index)) ctx.fillStyle = TARGET_POTENTIAL_COLOR; // Potential target (Yellowish)
+      else if (sortedIndices.includes(index)) ctx.fillStyle = `hsl(${secondaryColor})`; // Sorted (secondary)
+      else if (highlight.includes(index)) ctx.fillStyle = `hsl(${accentColor})`; // Highlighted (accent)
+       else if (pivot === index) ctx.fillStyle = PIVOT_COLOR; // Pivot (Pink) - Use defined constant
+      else ctx.fillStyle = `hsl(${primaryColor})`; // Default (primary)
 
       ctx.fillRect(x, y, barWidth, barHeight);
 
        // Draw number below bar if space allows
       if (barWidth > 15) {
-          ctx.fillStyle = "hsl(var(--foreground))"; // Use foreground color
+          ctx.fillStyle = `hsl(${foregroundColor})`; // Use foreground color
           ctx.textAlign = "center";
           ctx.font = "12px Arial";
           ctx.fillText(value.toString(), x + barWidth / 2, height - 5);
@@ -463,6 +486,19 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
         const { width, height } = canvas;
         ctx.clearRect(0, 0, width, height);
 
+        // Get computed styles for theme colors
+        const computedStyle = getComputedStyle(document.documentElement);
+        const primaryColor = computedStyle.getPropertyValue('--primary').trim();
+        const primaryFgColor = computedStyle.getPropertyValue('--primary-foreground').trim();
+        const secondaryColor = computedStyle.getPropertyValue('--secondary').trim();
+        const accentColor = computedStyle.getPropertyValue('--accent').trim();
+        const accentFgColor = computedStyle.getPropertyValue('--accent-foreground').trim();
+        const destructiveColor = computedStyle.getPropertyValue('--destructive').trim();
+        const mutedColor = computedStyle.getPropertyValue('--muted').trim();
+        const mutedFgColor = computedStyle.getPropertyValue('--muted-foreground').trim();
+        const backgroundColor = computedStyle.getPropertyValue('--background').trim(); // For text backgrounds
+        const foregroundColor = computedStyle.getPropertyValue('--foreground').trim(); // Default text
+
         const nodeMap = new Map(graphData.nodes.map(node => [node.id, node]));
         const mstEdgeIds = new Set(mstEdges.map(edge => edge.id));
         const highlightedEdgeIds = new Set(highlightedEdges);
@@ -480,36 +516,34 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
             ctx.lineTo(targetNode.x, targetNode.y);
 
             // Styling
+            let edgeColor = `hsl(${mutedFgColor})`; // Default: muted-foreground
             let edgeAlpha = 0.5; // Default fade for non-MST edges
             let edgeWidth = EDGE_WIDTH;
             let lineDash: number[] = [];
 
              if (mstEdgeIds.has(edge.id)) {
-                ctx.strokeStyle = "hsl(var(--secondary))"; // MST Edge color (Teal)
+                edgeColor = `hsl(${secondaryColor})`; // MST Edge color (Teal)
                 edgeWidth = MST_EDGE_WIDTH;
                 edgeAlpha = 1.0;
             } else if (candidateEdge && edge.id === candidateEdge.id) {
                  // Check if candidate was accepted (is in mstEdges) or rejected/considering
                  if (mstEdgeIds.has(candidateEdge.id)) {
-                     // Already drawn as MST edge
+                     // Already handled by the MST edge style
                  } else {
                      // Rejected or still considering candidate
-                     ctx.strokeStyle = "hsl(var(--destructive))"; // Rejected/Considering Candidate Edge (Reddish)
+                     edgeColor = `hsl(${destructiveColor})`; // Rejected/Considering Candidate Edge (Reddish)
                      edgeWidth = EDGE_WIDTH * 1.5; // Slightly thicker
                      lineDash = [5, 5]; // Dashed line
                      edgeAlpha = 0.8;
                  }
             } else if (highlightedEdgeIds.has(edge.id)) {
-                 ctx.strokeStyle = "hsl(var(--primary))"; // Highlighted edge (Purple)
+                 edgeColor = `hsl(${primaryColor})`; // Highlighted edge (Purple)
                  edgeWidth = EDGE_WIDTH * 1.2;
                  edgeAlpha = 0.9;
             }
-             else {
-                ctx.strokeStyle = "hsl(var(--muted-foreground))"; // Default edge color
-                 // edgeWidth remains EDGE_WIDTH
-                 // edgeAlpha remains 0.5
-            }
+             // else: Keep default edgeColor, edgeWidth, edgeAlpha
 
+            ctx.strokeStyle = edgeColor;
             ctx.lineWidth = edgeWidth;
             ctx.globalAlpha = edgeAlpha;
             ctx.setLineDash(lineDash);
@@ -520,25 +554,26 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
             // Draw edge weight
             const midX = (sourceNode.x + targetNode.x) / 2;
             const midY = (sourceNode.y + targetNode.y) / 2;
-            ctx.fillStyle = ctx.strokeStyle; // Match text color to line color
-            ctx.globalAlpha = edgeAlpha * 0.9; // Fade text slightly more than line
-            ctx.font = '10px Arial';
+            ctx.font = 'bold 11px Arial'; // Make weight slightly bolder/larger
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
              // Simple offset to avoid overlap with node/line
             const angle = Math.atan2(targetNode.y - sourceNode.y, targetNode.x - sourceNode.x);
-            const offsetX = Math.sin(angle) * 6;
-            const offsetY = -Math.cos(angle) * 6;
-            // Add a background for readability
-            const textWidth = ctx.measureText(edge.weight.toString()).width;
-             ctx.fillStyle = "hsl(var(--background))"; // Use background for text box
-             ctx.globalAlpha = edgeAlpha * 0.8; // Background slightly more transparent
-             ctx.fillRect(midX + offsetX - textWidth/2 - 2, midY + offsetY - 8, textWidth + 4, 10); // Small background rect
+             // Increase offset slightly for better separation
+            const offsetX = Math.sin(angle) * 10;
+            const offsetY = -Math.cos(angle) * 10;
+            const text = edge.weight.toString();
+            const textWidth = ctx.measureText(text).width;
 
-            // Draw text on top
-             ctx.fillStyle = ctx.strokeStyle;
-             ctx.globalAlpha = edgeAlpha * 1.1 > 1.0 ? 1.0 : edgeAlpha * 1.1; // Make text slightly less faded
-            ctx.fillText(edge.weight.toString(), midX + offsetX, midY + offsetY);
+             // Add a background for readability using theme background
+            ctx.fillStyle = `hsl(${backgroundColor})`; // Use background for text box
+            ctx.globalAlpha = 0.85; // Slightly less transparent background
+             ctx.fillRect(midX + offsetX - textWidth/2 - 3, midY + offsetY - 9, textWidth + 6, 12); // Slightly larger background rect
+
+            // Draw text on top - Use edge color for weight text
+             ctx.fillStyle = edgeColor;
+             ctx.globalAlpha = 1.0; // Make text fully opaque
+            ctx.fillText(text, midX + offsetX, midY + offsetY);
              ctx.globalAlpha = 1.0; // Reset alpha
         });
 
@@ -548,30 +583,30 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
             ctx.beginPath();
             ctx.arc(node.x, node.y, NODE_RADIUS, 0, Math.PI * 2);
 
-            // Determine Fill Style
+            // Determine Fill Style using theme colors
              if (node.id === persistentStartNodeId) {
-                 ctx.fillStyle = START_NODE_COLOR; // Specific color for start node
+                 ctx.fillStyle = START_NODE_COLOR; // Specific color for start node (accent)
              } else if (highlightedNodeIds.has(node.id)) {
-                ctx.fillStyle = "hsl(var(--accent))"; // Step-specific highlighted node (Orange)
+                ctx.fillStyle = `hsl(${accentColor})`; // Step-specific highlighted node (accent)
              } else if (mstEdges.some(e => e.source === node.id || e.target === node.id) ) {
                  // Node is part of the final MST (or intermediate MST)
-                 ctx.fillStyle = "hsl(var(--primary))"; // Visited/MST node color (Purple)
+                 ctx.fillStyle = `hsl(${primaryColor})`; // Visited/MST node color (primary)
             } else {
-                ctx.fillStyle = "hsl(var(--muted))"; // Default node color
+                ctx.fillStyle = `hsl(${mutedColor})`; // Default node color (muted)
             }
 
-            // Determine Stroke Style (Border)
-            if (node.id === persistentStartNodeId) {
-                ctx.strokeStyle = "hsl(var(--accent-foreground))"; // Contrast border for start node
-            } else if (highlightedNodeIds.has(node.id)) {
-                ctx.strokeStyle = "hsl(var(--accent-foreground))"; // Contrast border for step highlight
-            } else if (mstEdges.some(e => e.source === node.id || e.target === node.id)) {
-                 ctx.strokeStyle = "hsl(var(--primary-foreground))"; // Contrast border for MST nodes
-            }
-             else {
-                ctx.strokeStyle = "hsl(var(--muted-foreground))"; // Default border
-            }
+            // Determine Stroke Style (Border) using theme colors
+             let strokeColor = `hsl(${mutedFgColor})`; // Default border (muted-foreground)
+             if (node.id === persistentStartNodeId) {
+                 strokeColor = `hsl(${accentFgColor})`; // Contrast border for start node (accent-foreground)
+             } else if (highlightedNodeIds.has(node.id)) {
+                 strokeColor = `hsl(${accentFgColor})`; // Contrast border for step highlight (accent-foreground)
+             } else if (mstEdges.some(e => e.source === node.id || e.target === node.id)) {
+                  strokeColor = `hsl(${primaryFgColor})`; // Contrast border for MST nodes (primary-foreground)
+             }
+             // else: Keep default strokeColor
 
+            ctx.strokeStyle = strokeColor;
             ctx.lineWidth = 1.5;
              if (node.id === persistentStartNodeId) {
                  ctx.lineWidth = 2.5; // Make start node border thicker
@@ -580,9 +615,9 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
             ctx.stroke();
 
 
-            // Draw node ID (inside the node)
-            ctx.fillStyle = ctx.strokeStyle; // Match ID color to border for contrast against fill
-            ctx.font = 'bold 12px Arial';
+            // Draw node ID (inside the node) - Use stroke color for visibility
+            ctx.fillStyle = strokeColor;
+            ctx.font = 'bold 14px Arial'; // Increase font size slightly
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(node.id.toString(), node.x, node.y);
@@ -597,9 +632,12 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
      const isAnimating = steps.length > 0 && currentStepIndex < steps.length;
 
      // Determine the start node ID for persistent highlighting
-     const persistentStartId = (algorithmId === 'prims-algorithm' && isGraphStep(currentStep || {}))
-         ? (currentStep?.startNodeId ?? startNode ?? undefined) // Use step's start node if available, else fallback
-         : undefined;
+     let persistentStartId: number | undefined = undefined;
+     if (algorithmId === 'prims-algorithm') {
+         // Find the first step to get the intended startNodeId if available
+         const firstStep = steps.find(isGraphStep);
+         persistentStartId = firstStep?.startNodeId ?? startNode ?? undefined;
+     }
 
 
     if (!isAnimating) {
@@ -621,7 +659,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
     requestAnimationFrame(() => {
          if (isGraphStep(currentStep)) {
              const { graph: currentGraph, mstEdges, highlightedNodes, highlightedEdges, candidateEdge } = currentStep;
-             // Pass persistentStartId to drawGraph
+             // Use the determined persistentStartId for drawing
              drawGraph(currentGraph, mstEdges, highlightedNodes, highlightedEdges, candidateEdge, persistentStartId);
          } else if (isArrayStep(currentStep)) {
              const { array: stepArray, highlight, pivot, sortedIndices, target, foundIndex } = currentStep;
@@ -667,8 +705,13 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
          // Trigger drawing of the first step
              requestAnimationFrame(() => {
                 const firstStep = steps[0];
+                let persistentStartId = undefined;
+                 if (isGraphStep(firstStep) && algorithmId === 'prims-algorithm') {
+                     persistentStartId = firstStep?.startNodeId ?? startNode ?? undefined;
+                 }
+
                  if (isGraphStep(firstStep)) {
-                     drawGraph(firstStep.graph, firstStep.mstEdges, firstStep.highlightedNodes, firstStep.highlightedEdges, firstStep.candidateEdge, firstStep.startNodeId);
+                     drawGraph(firstStep.graph, firstStep.mstEdges, firstStep.highlightedNodes, firstStep.highlightedEdges, firstStep.candidateEdge, persistentStartId);
                  } else if (isArrayStep(firstStep)) {
                      drawArray(firstStep.array, firstStep.highlight, firstStep.pivot, firstStep.sortedIndices, firstStep.target, firstStep.foundIndex);
                  }
@@ -681,7 +724,11 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
   const handleReset = () => {
      if (category === 'graph') {
-         initializeGraph(graph); // Re-initialize with current graph structure but reset state
+         // Reset graph to a new random one or keep the current structure?
+         // Option 1: Keep current edited structure, just reset algorithm state
+         initializeGraph(graph);
+         // Option 2: Generate a completely new random graph
+         // initializeGraph();
      } else {
          // For array, reset based on current input value or generate new random
          const currentArray = parseArrayInput(inputValue);
@@ -744,7 +791,8 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                        </SelectTrigger>
                        <SelectContent>
                            {graph.nodes.length > 0 ? (
-                                graph.nodes.map(node => (
+                                // Sort nodes by ID for consistent order
+                                [...graph.nodes].sort((a, b) => a.id - b.id).map(node => (
                                     <SelectItem key={node.id} value={node.id.toString()}>
                                         Node {node.id}
                                     </SelectItem>
@@ -843,26 +891,22 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
              {/* Conditional Rendering: Canvas for Arrays, GraphEditor for Graphs */}
              {isGraphCategory ? (
                  <CardContent className="aspect-[2/1] p-0 overflow-hidden relative">
+                    {/* GraphEditor is now only for interactive editing */}
                     <GraphEditor
                         graph={graph}
                         onGraphChange={handleGraphChange}
-                        width={800} // Intrinsic width, adjust as needed
-                        height={400} // Intrinsic height, adjust as needed
+                        width={800} // Keep consistent size
+                        height={400}
                         readOnly={isPlaying} // Make editor read-only during visualization
-                        // Pass drawing state from AlgorithmVisualizer to GraphEditor if needed
-                        // e.g., mstEdges={isGraphStep(currentStepData) ? currentStepData.mstEdges : []}
-                        // highlightedNodes={...} etc.
-                        // This requires GraphEditor to accept and use these props for drawing overlays.
-                        // FOR NOW: GraphEditor handles editing, Canvas below handles visualization drawing.
                     />
-                    {/* Overlay Canvas for visualization steps */}
+                    {/* Visualization Canvas sits *on top* (z-index) during playback */}
                      <canvas
                         ref={canvasRef}
                         width="800"
                         height="400"
                         className={cn(
-                            "absolute top-0 left-0 w-full h-full pointer-events-none", // Pointer events none so editor below is interactive
-                             isPlaying ? "bg-muted/10" : "bg-transparent" // Slight overlay during playback
+                            "absolute top-0 left-0 w-full h-full",
+                            isPlaying ? "z-10 pointer-events-none bg-background/10" : "z-0 pointer-events-none bg-transparent" // Layer control
                              )}
                      ></canvas>
                  </CardContent>
@@ -873,7 +917,8 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                         ref={canvasRef}
                         width="800"
                         height="400"
-                        className="absolute top-0 left-0 w-full h-full bg-muted/30 rounded-b-lg border-t"
+                        // className="absolute top-0 left-0 w-full h-full bg-muted/30 rounded-b-lg border-t"
+                         className="absolute top-0 left-0 w-full h-full bg-transparent rounded-b-lg border-t" // Use transparent background
                      ></canvas>
                  </CardContent>
              )}
