@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AlgoVisualizer",
+  title: "AlgoVision",
   description: "Visualize sorting and searching algorithms",
 };
 
@@ -35,3 +35,4 @@ export default function RootLayout({
     </html>
   );
 }
+

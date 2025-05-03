@@ -21,7 +21,7 @@ export default function Header() {
             <path d="M18 20V4" />
             <path d="M6 20v-4" />
           </svg>
-          <span className="font-bold text-lg">AlgoVisualizer</span>
+          <span className="font-bold text-lg">AlgoVision</span>
         </Link>
         <nav className="flex items-center space-x-4">
           <AlgorithmSelector />
@@ -30,3 +30,4 @@ export default function Header() {
     </header>
   );
 }
+

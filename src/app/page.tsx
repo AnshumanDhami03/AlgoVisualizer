@@ -5,7 +5,7 @@ export default function Home() {
   return (
     <div className="flex flex-col items-center justify-center space-y-8 text-center">
       <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl">
-        Welcome to <span className="text-primary">AlgoVisualizer</span>
+        Welcome to <span className="text-primary">AlgoVision</span>
       </h1>
       <p className="max-w-2xl text-lg text-muted-foreground">
         Explore and understand fundamental sorting, searching, and graph algorithms (like Minimum Spanning Trees) through interactive visualizations. See how algorithms work step-by-step.
@@ -38,3 +38,4 @@ export default function Home() {
     </div>
   );
 }
+

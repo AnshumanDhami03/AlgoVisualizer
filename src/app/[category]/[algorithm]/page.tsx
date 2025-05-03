@@ -1,4 +1,5 @@
 
+
 import type { Metadata } from 'next';
 import AlgorithmVisualizer from '@/components/algorithm/algorithm-visualizer';
 // import { notFound } from 'next/navigation'; // Removed unused import
@@ -50,7 +51,7 @@ export async function generateMetadata({ params }: AlgorithmPageProps): Promise<
     // but it might be better handled in the page component itself.
     // For metadata, a generic title is often acceptable.
     return {
-      title: 'Algorithm Not Found | AlgoVisualizer',
+      title: 'Algorithm Not Found | AlgoVision',
       description: 'The requested algorithm visualization could not be found.',
     };
   }
@@ -58,7 +59,7 @@ export async function generateMetadata({ params }: AlgorithmPageProps): Promise<
   const capitalizedCategory = category.charAt(0).toUpperCase() + category.slice(1);
 
   return {
-    title: `${algorithmName} | ${capitalizedCategory} | AlgoVisualizer`,
+    title: `${algorithmName} | ${capitalizedCategory} | AlgoVision`,
     description: `Visualize the ${algorithmName} algorithm step by step.`,
   };
 }
@@ -120,4 +121,5 @@ export async function generateStaticParams() {
   }
   return paths;
 }
+
 
