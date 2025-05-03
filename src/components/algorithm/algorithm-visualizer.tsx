@@ -157,23 +157,31 @@ const generateRandomGraph = (numNodes = 7, edgeDensity = 0.35): Graph => {
             }
         }
         if (components.length > 1) {
+            // console.log(`Graph is not connected. Found ${components.length} components. Adding edges to connect.`);
             for (let i = 0; i < components.length - 1; i++) {
                 const compA = components[i];
                 const compB = components[i + 1];
+                // Connect random nodes from the two components
                 const nodeAId = compA[Math.floor(Math.random() * compA.length)];
                 const nodeBId = compB[Math.floor(Math.random() * compB.length)];
                 const canonicalEdgeId = nodeAId < nodeBId ? `${nodeAId}-${nodeBId}` : `${nodeBId}-${nodeAId}`;
+
+                // Avoid adding duplicate edges
                 if (!edgeSet.has(canonicalEdgeId)) {
-                    const weight = Math.floor(Math.random() * 15) + 5;
+                    const weight = Math.floor(Math.random() * 15) + 5; // Give connecting edges reasonable weight
                     const edgeId = `connect-${nodeAId}-${nodeBId}-${weight}-${Date.now() % 10000}`;
+                    // console.log(`Adding edge between ${nodeAId} and ${nodeBId} with weight ${weight}`);
                     edges.push({ id: edgeId, source: nodeAId, target: nodeBId, weight });
                     edgeSet.add(canonicalEdgeId);
+                     // Update adjacency list for subsequent checks (if any needed, though one pass should suffice here)
                      adj.get(nodeAId)?.push(nodeBId);
                      adj.get(nodeBId)?.push(nodeAId);
                 }
             }
         }
     }
+
+
     return { nodes, edges };
 };
 
@@ -315,13 +323,13 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                  if (mstEdgeIds.has(candidateEdge.id)) {
                     // Should already be handled by MST edge style
                  } else {
-                     edgeColor = `hsl(${destructiveColor})`;
+                     edgeColor = `hsl(${destructiveColor})`; // Considered but rejected (e.g., forms cycle in Kruskal's)
                      edgeWidth = EDGE_WIDTH * 1.5;
                      lineDash = [5, 5];
                      edgeAlpha = 0.8;
                  }
             } else if (highlightedEdgeIds.has(edge.id)) {
-                 edgeColor = `hsl(${primaryColor})`;
+                 edgeColor = `hsl(${primaryColor})`; // Being actively considered or part of PQ in Prim's
                  edgeWidth = EDGE_WIDTH * 1.2;
                  edgeAlpha = 0.9;
             }
@@ -334,24 +342,27 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
             ctx.setLineDash([]);
              ctx.globalAlpha = 1.0;
 
+            // Draw edge weight
             const midX = (sourceNode.x + targetNode.x) / 2;
             const midY = (sourceNode.y + targetNode.y) / 2;
             ctx.font = 'bold 12px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
+            // Angle calculation to offset weight text slightly from the edge line
             const angle = Math.atan2(targetNode.y - sourceNode.y, targetNode.x - sourceNode.x);
-            const offsetX = Math.sin(angle) * 15;
+            const offsetX = Math.sin(angle) * 15; // Offset perpendicular to edge
             const offsetY = -Math.cos(angle) * 15;
             const text = edge.weight.toString();
             const textWidth = ctx.measureText(text).width;
 
+            // Draw a small background rectangle behind the text for better visibility
             ctx.fillStyle = `hsl(${backgroundColor})`;
             ctx.globalAlpha = 0.9;
             ctx.fillRect(midX + offsetX - textWidth/2 - 4, midY + offsetY - 10, textWidth + 8, 14);
-             ctx.fillStyle = edgeColor;
-             ctx.globalAlpha = 1.0;
+             ctx.fillStyle = edgeColor; // Use the edge's color for the text
+             ctx.globalAlpha = 1.0; // Reset alpha
             ctx.fillText(text, midX + offsetX, midY + offsetY);
-             ctx.globalAlpha = 1.0;
+             ctx.globalAlpha = 1.0; // Ensure alpha is reset
         });
 
 
@@ -360,44 +371,50 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
             ctx.beginPath();
             ctx.arc(node.x, node.y, NODE_RADIUS, 0, Math.PI * 2);
 
+             // Determine Fill Color
              if (node.id === persistentStartNodeId) {
-                 ctx.fillStyle = START_NODE_COLOR;
+                 ctx.fillStyle = START_NODE_COLOR; // Specific color for the designated start node
              } else if (highlightedNodeIds.has(node.id)) {
-                ctx.fillStyle = `hsl(${accentColor})`;
+                ctx.fillStyle = `hsl(${accentColor})`; // Highlight active nodes
              } else if (mstEdges.some(e => e.source === node.id || e.target === node.id) ) {
+                 // Part of the MST (implicitly visited in Prim's, connected in Kruskal's result)
                  ctx.fillStyle = `hsl(${primaryColor})`;
             } else {
-                ctx.fillStyle = `hsl(${mutedColor})`;
+                ctx.fillStyle = `hsl(${mutedColor})`; // Default state
             }
 
-             let strokeColor = `hsl(${mutedFgColor})`;
+            ctx.fill();
+
+            // Determine Stroke Color and Width
+             let strokeColor = `hsl(${mutedFgColor})`; // Default stroke
+             let strokeWidth = 1.5;
              if (node.id === persistentStartNodeId) {
-                 strokeColor = `hsl(${accentFgColor})`;
+                 strokeColor = `hsl(${accentFgColor})`; // Matching foreground for start node
+                 strokeWidth = 2.5; // Thicker border for start node
              } else if (highlightedNodeIds.has(node.id)) {
-                 strokeColor = `hsl(${accentFgColor})`;
+                 strokeColor = `hsl(${accentFgColor})`; // Matching foreground for highlighted nodes
              } else if (mstEdges.some(e => e.source === node.id || e.target === node.id)) {
-                  strokeColor = `hsl(${primaryFgColor})`;
+                  strokeColor = `hsl(${primaryFgColor})`; // Matching foreground for nodes in MST
              }
+
 
             ctx.strokeStyle = strokeColor;
-            ctx.lineWidth = 1.5;
-             if (node.id === persistentStartNodeId) {
-                 ctx.lineWidth = 2.5;
-             }
-            ctx.fill();
+            ctx.lineWidth = strokeWidth;
             ctx.stroke();
 
-            ctx.fillStyle = strokeColor;
+            // Draw Node ID Text
+            ctx.fillStyle = strokeColor; // Use the stroke color for the text for contrast
             ctx.font = 'bold 15px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(node.id.toString(), node.x, node.y);
         });
 
-    }, []); // Removed category, no longer directly used
+    }, []); // Removed category dependency
 
- // Modified resetVisualization to accept an optional graph to draw initially
+
  // Define resetVisualization using useCallback BEFORE it's used as a dependency
+ // Modified resetVisualization to accept an optional graph to draw initially
   const resetVisualization = useCallback((graphToDraw?: Graph) => {
     setIsPlaying(false);
     setSteps([]);
@@ -408,17 +425,30 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
     const activeGraph = graphToDraw ?? (isUsingEditorGraph ? editorGraph : visualizerGraph);
 
     requestAnimationFrame(() => {
-        if (category === 'graph' && activeGraph) { // Add check for activeGraph existence
+        if (category === 'graph' && activeGraph && activeGraph.nodes.length > 0) { // Check activeGraph has nodes
             let persistentStartId: number | undefined = undefined;
             if (algorithmId === 'prims-algorithm') {
-                 persistentStartId = startNode ?? undefined;
+                 // Use the state's startNode if valid within the active graph, otherwise default
+                 if (startNode !== null && activeGraph.nodes.some(n => n.id === startNode)) {
+                     persistentStartId = startNode;
+                 } else if (activeGraph.nodes.length > 0) {
+                     persistentStartId = activeGraph.nodes[0].id; // Fallback to first node
+                 }
             }
            drawGraphVisualization(activeGraph, [], [], [], undefined, persistentStartId);
         } else if (category === 'sort' || category === 'search'){ // Only draw array if relevant category
            drawArray(array);
+        } else if (category === 'graph' && (!activeGraph || activeGraph.nodes.length === 0)) {
+             // Clear canvas if graph is empty
+             const canvas = canvasRef.current;
+             if (canvas) {
+                 const ctx = canvas.getContext('2d');
+                 if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+             }
         }
       });
   }, [category, array, editorGraph, visualizerGraph, isUsingEditorGraph, startNode, algorithmId, drawArray, drawGraphVisualization]); // Include drawArray/Graph dependencies
+
 
   // --- Initialization and Reset ---
 
@@ -443,11 +473,11 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
     // Clears the graph editor workspace
    const clearGraphWorkspace = useCallback(() => {
         setEditorGraph({ nodes: [], edges: [] });
-        setStartNode(null);
+        setStartNode(null); // Clear start node when workspace clears
         resetVisualization({ nodes: [], edges: [] }); // Reset visualization with empty graph
         setIsUsingEditorGraph(true); // Assume user wants to visualize the (now empty) workspace
         toast({ title: "Workspace Cleared", description: "Graph editor has been reset." });
-    }, [resetVisualization, toast]); // Added toast dependency
+    }, [resetVisualization, toast]);
 
   // Initialize based on category when component mounts or category/algorithm changes
   useEffect(() => {
@@ -465,25 +495,31 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
             setEditorMode('node');
         }
     }
+     // Cleanup function to clear any running timeouts
     return () => {
       if (timeoutId.current) clearTimeout(timeoutId.current);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [algorithmId, category]); // Removed initializeRandomGraphForVisualizer, generateRandomArray, editorMode as they cause re-runs
+  }, [algorithmId, category]); // Dependencies are algorithmId and category
+
 
    // Update default start node based on the CURRENTLY ACTIVE graph for visualization
    useEffect(() => {
        const activeGraph = isUsingEditorGraph ? editorGraph : visualizerGraph;
-       if (category === 'graph' && activeGraph.nodes.length > 0 && startNode === null) {
-           setStartNode(activeGraph.nodes[0].id);
+       // Set default start node only if needed for Prim's and no valid start node is set
+       if (category === 'graph' && algorithmId === 'prims-algorithm' && activeGraph.nodes.length > 0) {
+            const currentStartNodeValid = startNode !== null && activeGraph.nodes.some(n => n.id === startNode);
+            if (!currentStartNodeValid) {
+                 setStartNode(activeGraph.nodes[0].id); // Default to first node if current is invalid or null
+            }
        }
-        if (category === 'graph' && activeGraph.nodes.length > 0 && startNode !== null && !activeGraph.nodes.some(n => n.id === startNode)) {
-             setStartNode(activeGraph.nodes[0].id);
-         }
-       if (category === 'graph' && activeGraph.nodes.length === 0) {
-           setStartNode(null);
+       // If not Prim's or graph is empty, clear start node
+       else if (category !== 'graph' || algorithmId !== 'prims-algorithm' || activeGraph.nodes.length === 0) {
+            if (startNode !== null) setStartNode(null);
        }
-   }, [editorGraph, visualizerGraph, isUsingEditorGraph, category, startNode]);
+
+   }, [editorGraph, visualizerGraph, isUsingEditorGraph, category, startNode, algorithmId]);
+
 
    // Effect to switch back to node mode if 'Set Source' is selected but not applicable (Kruskal's)
     useEffect(() => {
@@ -544,16 +580,21 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
   const handleEditorGraphChange = useCallback((newGraph: Graph) => {
       setEditorGraph(newGraph);
       // Reset visualization steps whenever editor graph changes
-      resetVisualization();
+      resetVisualization(); // Uses current isUsingEditorGraph flag
       // If user starts editing, assume they want to visualize this graph
       setIsUsingEditorGraph(true);
-      // Ensure start node is valid for the EDITOR graph
-        if (startNode !== null && !newGraph.nodes.some(n => n.id === startNode)) {
-            setStartNode(newGraph.nodes.length > 0 ? newGraph.nodes[0].id : null);
-        } else if (newGraph.nodes.length > 0 && startNode === null) {
-            setStartNode(newGraph.nodes[0].id);
-        }
-  }, [resetVisualization, startNode]);
+      // Ensure start node is valid for the EDITOR graph (if Prim's)
+       if (algorithmId === 'prims-algorithm') {
+           const startNodeValid = startNode !== null && newGraph.nodes.some(n => n.id === startNode);
+           if (!startNodeValid && newGraph.nodes.length > 0) {
+               setStartNode(newGraph.nodes[0].id); // Set to first node if current becomes invalid or null
+           } else if (newGraph.nodes.length === 0) {
+               setStartNode(null); // Clear start node if editor becomes empty
+           }
+       } else {
+            setStartNode(null); // Not Prim's, clear start node
+       }
+  }, [resetVisualization, startNode, algorithmId]); // Include algorithmId
 
 
   const handleSetArrayData = () => {
@@ -571,13 +612,25 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
    // Handles manual start node selection VIA THE SELECT DROPDOWN
    const handleStartNodeChange = (value: string) => {
+       if (algorithmId !== 'prims-algorithm') return; // Only relevant for Prim's
+
        const activeGraph = isUsingEditorGraph ? editorGraph : visualizerGraph;
        const nodeId = parseInt(value, 10);
        if (!isNaN(nodeId) && activeGraph.nodes.some(n => n.id === nodeId)) {
            setStartNode(nodeId);
            resetVisualization(); // Reset if start node changes, steps depend on it
+       } else {
+           // Attempt to set to a non-existent node or invalid value, maybe reset to default or null?
+            if (activeGraph.nodes.length > 0) {
+                setStartNode(activeGraph.nodes[0].id); // Fallback to first node
+            } else {
+                 setStartNode(null); // No nodes available
+            }
+           resetVisualization();
+           toast({title: "Invalid Selection", description:"Selected start node doesn't exist in the current graph.", variant: "destructive"})
        }
    };
+
 
     // Handles start node selection VIA THE GRAPH EDITOR (Set Source Mode)
    const handleSetStartNodeFromEditor = useCallback((nodeId: number) => {
@@ -585,17 +638,18 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
            toast({ title: "Action Unavailable", description: "Setting a source node directly is only needed for Prim's algorithm.", variant: "default" });
            return; // Only allow for Prim's
        }
-       const activeGraph = isUsingEditorGraph ? editorGraph : visualizerGraph;
-       if (activeGraph.nodes.some(n => n.id === nodeId)) {
+       // Note: GraphEditor works on editorGraph, so we check against that
+       if (editorGraph.nodes.some(n => n.id === nodeId)) {
            setStartNode(nodeId);
-           resetVisualization(); // Reset visualization as steps depend on start node
-           toast({ title: "Start Node Set", description: `Node ${nodeId} selected as the start node for Prim's algorithm.` });
+            setIsUsingEditorGraph(true); // Assume user wants to visualize the editor graph now
+           resetVisualization(editorGraph); // Reset visualization using the editor graph
+           toast({ title: "Start Node Set", description: `Node ${nodeId} selected as the start node for Prim's algorithm on the workspace graph.` });
            // Optional: Switch back to node mode after setting the source
            setEditorMode('node');
        } else {
-           toast({ title: "Invalid Node", description: `Node ${nodeId} does not exist in the current graph.`, variant: "destructive" });
+           toast({ title: "Invalid Node", description: `Node ${nodeId} does not exist in the workspace graph.`, variant: "destructive" });
        }
-   }, [algorithmId, isUsingEditorGraph, editorGraph, visualizerGraph, resetVisualization, toast]); // Dependencies
+   }, [algorithmId, editorGraph, resetVisualization, toast]); // Dependencies
 
 
     const handleEditorModeChange = (value: GraphEditorMode | null) => {
@@ -649,30 +703,35 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
             newSteps = algorithmFunction(currentArray, targetNum);
         } else if (category === 'graph') {
             // Use the determined graph (editor or random)
-            if (!graphToVisualize || graphToVisualize.nodes.length === 0) throw new Error("Please provide or generate a valid graph.");
-
-            let currentStartNode = startNode; // Use the state's start node
-
-            // Validate or select default start node for the *graph being visualized*
-             if (currentStartNode === null || !graphToVisualize.nodes.some(n => n.id === currentStartNode)) {
-                currentStartNode = graphToVisualize.nodes[0]?.id ?? null;
-                 if (currentStartNode === null) {
-                     throw new Error("Graph has no nodes to select a start node from.");
-                 }
-                 setStartNode(currentStartNode); // Update state if default was chosen
-                  toast({title: "Start Node Selected", description: `Using node ${currentStartNode} as start node.`});
+            if (!graphToVisualize || graphToVisualize.nodes.length === 0) {
+                toast({ title: "Empty Graph", description: `Cannot visualize - ${isUsingEditorGraph ? 'workspace graph is empty.' : 'random graph generation failed.'}`, variant: "destructive" });
+                return;
              }
 
 
+            let currentStartNodeIdForAlgo = startNode; // Use the state's start node
+
+             // For Prim's, validate or select default start node for the *graph being visualized*
             if (algorithmId === 'prims-algorithm') {
-                 if (currentStartNode === null) { // Double check after potential default selection
+                 if (currentStartNodeIdForAlgo === null || !graphToVisualize.nodes.some(n => n.id === currentStartNodeIdForAlgo)) {
+                    currentStartNodeIdForAlgo = graphToVisualize.nodes[0]?.id ?? null;
+                     if (currentStartNodeIdForAlgo === null) {
+                         throw new Error("Graph has no nodes to select a start node from.");
+                     }
+                     // Update state ONLY if we had to pick a default because the current one was invalid/null
+                     if(startNode !== currentStartNodeIdForAlgo) {
+                         setStartNode(currentStartNodeIdForAlgo);
+                     }
+                     toast({title: "Start Node Selected", description: `Using node ${currentStartNodeIdForAlgo} as start node for Prim's.`});
+                 }
+
+                 if (currentStartNodeIdForAlgo === null) { // Double check after potential default selection
                     throw new Error("Cannot run Prim's without a valid start node.");
                  }
-                newSteps = algorithmFunction(graphToVisualize, currentStartNode);
-            } else { // Kruskal's
+                newSteps = algorithmFunction(graphToVisualize, currentStartNodeIdForAlgo);
+            } else { // Kruskal's (doesn't need start node)
                  newSteps = algorithmFunction(graphToVisualize);
             }
-
         }
 
         if (newSteps.length > 0) {
@@ -683,9 +742,9 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                 const firstStep = newSteps[0];
                  if (firstStep) { // Ensure firstStep exists
                     if (isGraphStep(firstStep)) {
-                        // Use startNodeId from the first step or the selected startNode
-                        const firstStepStartNodeId = firstStep.startNodeId ?? startNode ?? undefined;
-                        drawGraphVisualization(firstStep.graph, firstStep.mstEdges, firstStep.highlightedNodes, firstStep.highlightedEdges, firstStep.candidateEdge, firstStepStartNodeId);
+                        // Use startNodeId from the first step or the selected startNode (for Prim's)
+                        const persistentStartId = (algorithmId === 'prims-algorithm') ? (firstStep.startNodeId ?? startNode ?? undefined) : undefined;
+                        drawGraphVisualization(firstStep.graph, firstStep.mstEdges, firstStep.highlightedNodes, firstStep.highlightedEdges, firstStep.candidateEdge, persistentStartId);
                     } else if (isArrayStep(firstStep)) {
                         drawArray(firstStep.array, firstStep.highlight, firstStep.pivot, firstStep.sortedIndices, firstStep.target, firstStep.foundIndex);
                     }
@@ -711,12 +770,29 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
  useEffect(() => {
      // Guard against accessing steps array when empty or index out of bounds
      if (!steps || steps.length === 0 || currentStepIndex < 0 || currentStepIndex >= steps.length) {
-        // Potentially reset to initial state or do nothing if no steps yet
-         // If resetting, ensure the appropriate graph/array is drawn
+        // Reset to initial state if visualization finished or hasn't started
          requestAnimationFrame(() => {
              const activeGraph = isUsingEditorGraph ? editorGraph : visualizerGraph;
-             if (category === 'graph' && activeGraph) {
-                 drawGraphVisualization(activeGraph, [], [], [], undefined, startNode ?? undefined);
+             if (category === 'graph') {
+                if (activeGraph && activeGraph.nodes.length > 0) {
+                    let persistentStartId: number | undefined = undefined;
+                    if (algorithmId === 'prims-algorithm') {
+                        // Recalculate start node based on current state and active graph
+                         if (startNode !== null && activeGraph.nodes.some(n => n.id === startNode)) {
+                             persistentStartId = startNode;
+                         } else if (activeGraph.nodes.length > 0) {
+                             persistentStartId = activeGraph.nodes[0].id;
+                         }
+                    }
+                    drawGraphVisualization(activeGraph, [], [], [], undefined, persistentStartId);
+                } else {
+                    // Clear canvas if graph is empty
+                     const canvas = canvasRef.current;
+                     if (canvas) {
+                         const ctx = canvas.getContext('2d');
+                         if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+                     }
+                }
              } else if ((category === 'sort' || category === 'search') && array) {
                  drawArray(array);
              }
@@ -725,34 +801,15 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
      }
 
 
+     // If we have steps and are within bounds, draw the current step
      let currentStep = steps[currentStepIndex];
-     const isAnimating = steps.length > 0 && currentStepIndex < steps.length;
-     const activeGraph = isUsingEditorGraph ? editorGraph : visualizerGraph; // Use the correct graph source
-
-     let persistentStartId: number | undefined = undefined;
-     if (algorithmId === 'prims-algorithm') {
-         const firstStep = steps.find(isGraphStep);
-         persistentStartId = firstStep?.startNodeId ?? startNode ?? undefined;
-     }
-
-
-    if (!isAnimating) {
-          requestAnimationFrame(() => {
-             if (category === 'graph' && activeGraph) { // Check activeGraph
-                 drawGraphVisualization(activeGraph, [], [], [], undefined, persistentStartId);
-             } else if ((category === 'sort' || category === 'search') && array) {
-                 drawArray(array);
-             }
-          });
-         return;
-     }
-
-     if (!currentStep) return; // Should be covered by the initial guard, but for safety
+     if (!currentStep) return; // Safety check
 
     requestAnimationFrame(() => {
          if (isGraphStep(currentStep)) {
              const { graph: stepGraph, mstEdges, highlightedNodes, highlightedEdges, candidateEdge, startNodeId: stepStartNodeId } = currentStep;
-              const currentPersistentStartId = stepStartNodeId ?? (algorithmId === 'prims-algorithm' ? startNode ?? undefined : undefined);
+              // Determine the start node to highlight for THIS step
+             const currentPersistentStartId = (algorithmId === 'prims-algorithm') ? (stepStartNodeId ?? startNode ?? undefined) : undefined;
              // IMPORTANT: Draw using the graph state *from the step*, not the component state
              drawGraphVisualization(stepGraph, mstEdges, highlightedNodes, highlightedEdges, candidateEdge, currentPersistentStartId);
          } else if (isArrayStep(currentStep)) {
@@ -761,7 +818,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
          }
     });
 
- // Include activeGraph in dependencies
+ // Include all dependencies that influence the drawing logic
  }, [currentStepIndex, steps, drawArray, drawGraphVisualization, category, editorGraph, visualizerGraph, isUsingEditorGraph, array, startNode, algorithmId]);
 
 
@@ -792,16 +849,14 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
     if (steps.length === 0) {
         startVisualization();
     } else if (currentStepIndex >= steps.length -1 ) {
+        // If finished, restart from beginning
         setCurrentStepIndex(0);
         setIsPlaying(true);
              requestAnimationFrame(() => {
                 const firstStep = steps[0];
                 if (firstStep) { // Check if firstStep exists
-                    let persistentStartId = undefined;
-                    if (isGraphStep(firstStep) && algorithmId === 'prims-algorithm') {
-                        persistentStartId = firstStep?.startNodeId ?? startNode ?? undefined;
-                    }
                     if (isGraphStep(firstStep)) {
+                        const persistentStartId = (algorithmId === 'prims-algorithm') ? (firstStep.startNodeId ?? startNode ?? undefined) : undefined;
                         drawGraphVisualization(firstStep.graph, firstStep.mstEdges, firstStep.highlightedNodes, firstStep.highlightedEdges, firstStep.candidateEdge, persistentStartId);
                     } else if (isArrayStep(firstStep)) {
                         drawArray(firstStep.array, firstStep.highlight, firstStep.pivot, firstStep.sortedIndices, firstStep.target, firstStep.foundIndex);
@@ -810,6 +865,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
              });
     }
      else {
+         // If paused in the middle, resume/pause
        setIsPlaying(!isPlaying);
     }
   };
@@ -866,7 +922,7 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
   const getWorkspaceDescription = () => {
         switch (editorMode) {
             case 'node': return "Click to add nodes. Drag nodes to move.";
-            case 'edge': return "Drag between nodes to add edges. Click edges to edit/delete.";
+            case 'edge': return "Desktop: Drag between nodes. Mobile: Tap two nodes. Click/Tap edge to edit/delete.";
             case 'set-source': return "Click on a node to set it as the source (for Prim's).";
             default: return "Graph Workspace";
         }
@@ -899,12 +955,18 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                       variant="secondary"
                       size="sm"
                       className="w-full"
-                      disabled={editorGraph.nodes.length === 0} // Disable if editor is empty
+                      disabled={editorGraph.nodes.length === 0 || isUsingEditorGraph} // Disable if editor is empty or already in use
                   >
                       Use Workspace Graph
                   </Button>
                   {/* Button to generate and use a Random graph */}
-                  <Button onClick={handleRandomizeGraph} variant="outline" size="sm" className="w-full">
+                  <Button
+                        onClick={handleRandomizeGraph}
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        disabled={!isUsingEditorGraph} // Disable if already using random graph
+                   >
                       <ShuffleIcon className="mr-2 h-4 w-4" /> Use Random Graph
                   </Button>
 
@@ -912,14 +974,15 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                  {algorithmId === 'prims-algorithm' && (
                     <>
                     <Separator />
-                     <Label>Start Node (Prim's)</Label>
+                     <Label htmlFor="start-node-select">Start Node (Prim's)</Label>
                      <div className="flex gap-2">
                      <Select
-                        value={startNode !== null ? startNode.toString() : ""}
+                        value={startNode !== null ? startNode.toString() : ""} // Ensure value is string or empty string
                         onValueChange={handleStartNodeChange}
                         disabled={!activeGraph || activeGraph.nodes.length === 0} // Disable based on *active* graph
                      >
                        <SelectTrigger id="start-node-select" className="flex-grow">
+                         {/* Use placeholder in SelectValue */}
                          <SelectValue placeholder="Select node..." />
                        </SelectTrigger>
                        <SelectContent>
@@ -930,32 +993,20 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
                                     </SelectItem>
                                 ))
                             ) : (
-                                <SelectItem value="" disabled>No nodes available</SelectItem>
+                                /* No fallback item needed here, placeholder handles empty state */
+                                null
                             )
                            }
                        </SelectContent>
                      </Select>
-                     {/* Optionally, add a button to enter 'set-source' mode quickly */}
-                      {/* <Button
-                         variant="outline"
-                         size="icon"
-                         onClick={() => handleEditorModeChange('set-source')}
-                         disabled={editorMode === 'set-source'}
-                         aria-label="Set Start Node via Click"
-                         title="Set Start Node via Click"
-                       >
-                         <LocateFixed className="h-4 w-4" />
-                       </Button> */}
                      </div>
-
                      </>
-
                  )}
                   <Separator />
                    <p className="text-sm text-muted-foreground">
                        {isUsingEditorGraph
-                           ? "Currently using graph from workspace for visualization."
-                           : "Currently using randomly generated graph for visualization."
+                           ? "Visualizing graph from workspace."
+                           : "Visualizing randomly generated graph."
                        }
                    </p>
              </>
@@ -1021,10 +1072,24 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
           {/* Playback Controls */}
            <div className="flex items-center justify-center space-x-2 mt-4">
-              <Button onClick={handlePlayPause} variant="default" size="icon" aria-label={isPlaying ? "Pause" : (steps.length > 0 ? "Play/Restart" : "Start")}>
+              <Button
+                    onClick={handlePlayPause}
+                    variant="default"
+                    size="icon"
+                    aria-label={isPlaying ? "Pause" : (steps.length > 0 && currentStepIndex < steps.length -1 ? "Play" : "Start/Restart")}
+                    // Disable play/pause if graph is empty and it's a graph algo
+                    disabled={isGraphCategory && (!activeGraph || activeGraph.nodes.length === 0)}
+               >
                    {isPlaying ? <Pause className="h-5 w-5"/> : <Play className="h-5 w-5"/>}
                </Button>
-               <Button onClick={handleReset} variant="outline" size="icon" aria-label="Reset Visualization">
+               <Button
+                    onClick={handleReset}
+                    variant="outline"
+                    size="icon"
+                    aria-label="Reset Visualization"
+                     // Disable reset if graph is empty and it's a graph algo
+                    disabled={isGraphCategory && (!activeGraph || activeGraph.nodes.length === 0)}
+                >
                    <RotateCcw className="h-5 w-5"/>
                </Button>
            </div>
@@ -1037,10 +1102,10 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
         {/* Conditional Rendering for Graph Workspace */}
         {isGraphCategory && (
              <Card>
-                 <CardHeader className="flex flex-row items-center justify-between gap-4">
-                     <div className="flex-grow">
+                 <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+                     <div className="flex-grow min-w-[150px]">
                         <CardTitle>Graph Workspace</CardTitle>
-                         <CardDescription>
+                         <CardDescription className="text-xs sm:text-sm">
                             {getWorkspaceDescription()}
                          </CardDescription>
                      </div>
