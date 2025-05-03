@@ -1,10 +1,5 @@
-type AlgorithmStep = {
-  array: number[];
-  highlight: number[]; // Index being checked
-  target: number;
-  foundIndex?: number; // Index where target is found
-  message: string;
-};
+import type { ArrayAlgorithmStep } from '@/lib/types'; // Updated import path
+
 
 export function linearSearch(array: number[], target: number): number {
   for (let i = 0; i < array.length; i++) {
@@ -15,8 +10,8 @@ export function linearSearch(array: number[], target: number): number {
   return -1; // Target not found
 }
 
-export function getLinearSearchSteps(array: number[], target: number): AlgorithmStep[] {
-  const steps: AlgorithmStep[] = [];
+export function getLinearSearchSteps(array: number[], target: number): ArrayAlgorithmStep[] {
+  const steps: ArrayAlgorithmStep[] = [];
   const n = array.length;
   let foundIndex = -1;
 
@@ -47,23 +42,37 @@ export function getLinearSearchSteps(array: number[], target: number): Algorithm
       });
       break; // Exit loop once found
     } else {
-       steps.push({
-        array: [...array],
-        highlight: [i],
-        target: target,
-        message: `Element ${array[i]} does not match target ${target}.`,
-      });
+       // Add step indicating non-match only if not the last element checked (or if found)
+       if(i < n-1){ // Add this step only if not the last element
+          steps.push({
+            array: [...array],
+            highlight: [i],
+            target: target,
+            message: `Element ${array[i]} does not match target ${target}. Moving to next index.`,
+          });
+       }
     }
   }
 
   if (foundIndex === -1) {
-    steps.push({
+    // Add the final "not found" message if it wasn't found
+     steps.push({
       array: [...array],
       highlight: [], // No highlight if not found after loop
       target: target,
-      message: `Target ${target} not found in the array.`,
+      message: `Finished searching. Target ${target} not found in the array.`,
     });
+  } else {
+     // If found, add a final "finished" step after the "found" step
+      steps.push({
+        array: [...array],
+        highlight: [foundIndex], // Keep highlighting the found index
+        target: target,
+        foundIndex: foundIndex,
+        message: `Finished searching. Target found at index ${foundIndex}.`,
+        });
   }
+
 
   return steps;
 }

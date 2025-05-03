@@ -1,24 +1,20 @@
-type AlgorithmStep = {
-  array: number[];
-  highlight: number[]; // [pivotIndex, i, j] or indices being swapped
-  sortedIndices: number[]; // Indices considered sorted (less useful for quicksort visualization)
-  pivot?: number; // Index of the current pivot
-  message: string;
-};
+import type { ArrayAlgorithmStep } from '@/lib/types'; // Updated import path
+
 
 // Partition function helper for Quick Sort that generates steps
 function partition(
   arr: number[],
   low: number,
   high: number,
-  steps: AlgorithmStep[]
-): number {
+  steps: ArrayAlgorithmStep[],
+  currentSorted: number[] // Pass currently known sorted indices
+): { partitionIndex: number; sortedIndices: number[] } {
   const pivotValue = arr[high];
   let pivotIndexHighlight = high; // Keep track of the pivot's original index for highlighting
   steps.push({
     array: [...arr],
     highlight: [pivotIndexHighlight],
-    sortedIndices: [],
+    sortedIndices: [...currentSorted],
     pivot: pivotIndexHighlight,
     message: `Choosing pivot: ${pivotValue} (at index ${high}). Partitioning range ${low}-${high}.`,
   });
@@ -29,8 +25,8 @@ function partition(
     // Highlight pivot, i (boundary of smaller elements), and j (current element)
     steps.push({
       array: [...arr],
-      highlight: [pivotIndexHighlight, i < low ? -1 : i , j], // Use -1 if i is out of bounds initially
-      sortedIndices: [],
+      highlight: [pivotIndexHighlight, i < low ? -1 : i , j].filter(idx => idx >= 0), // Filter out -1
+      sortedIndices: [...currentSorted],
       pivot: pivotIndexHighlight,
       message: `Comparing element at index ${j} (${arr[j]}) with pivot ${pivotValue}. i is at ${i}.`,
     });
@@ -41,7 +37,7 @@ function partition(
           steps.push({
             array: [...arr],
             highlight: [pivotIndexHighlight, i, j], // Highlight elements to be swapped
-            sortedIndices: [],
+            sortedIndices: [...currentSorted],
              pivot: pivotIndexHighlight,
             message: `${arr[j]} < ${pivotValue}. Swapping element at index i (${i}, value ${arr[i]}) with element at index j (${j}, value ${arr[j]}).`,
           });
@@ -49,25 +45,25 @@ function partition(
           steps.push({
             array: [...arr],
             highlight: [pivotIndexHighlight, i, j], // Keep highlight briefly after swap
-            sortedIndices: [],
+            sortedIndices: [...currentSorted],
              pivot: pivotIndexHighlight,
             message: `Swapped. i is now ${i}. Array: [${arr.join(', ')}].`,
           });
       } else {
+           // Increment i visually even if no swap
            steps.push({
             array: [...arr],
             highlight: [pivotIndexHighlight, i, j],
-            sortedIndices: [],
+            sortedIndices: [...currentSorted],
              pivot: pivotIndexHighlight,
-            message: `${arr[j]} < ${pivotValue}, and i (${i}) equals j (${j}). Incrementing i to ${i+1}. No swap needed here.`,
-          });
-          // Note: i is incremented *before* this message technically, but state reflects post-increment. Message clarifies.
+            message: `${arr[j]} < ${pivotValue}. Incrementing i to ${i}. No swap needed as i==j.`,
+           });
       }
     } else {
         steps.push({
             array: [...arr],
-            highlight: [pivotIndexHighlight, i < low ? -1 : i, j],
-            sortedIndices: [],
+            highlight: [pivotIndexHighlight, i < low ? -1 : i, j].filter(idx => idx >= 0),
+            sortedIndices: [...currentSorted],
              pivot: pivotIndexHighlight,
             message: `${arr[j]} >= ${pivotValue}. No swap needed. Moving j forward.`,
           });
@@ -80,30 +76,30 @@ function partition(
      steps.push({
        array: [...arr],
        highlight: [finalPivotIndex, high], // Highlight final pivot position and original pivot position
-       sortedIndices: [],
+       sortedIndices: [...currentSorted],
         pivot: pivotIndexHighlight, // Still highlighting original pivot position
        message: `Partition complete for range ${low}-${high}. Swapping pivot ${arr[high]} (at index ${high}) with element ${arr[finalPivotIndex]} (at index ${finalPivotIndex}).`,
      });
      [arr[finalPivotIndex], arr[high]] = [arr[high], arr[finalPivotIndex]]; // Final swap
      steps.push({
        array: [...arr],
-       highlight: [finalPivotIndex], // Highlight the pivot in its final sorted place for this partition
-       sortedIndices: [finalPivotIndex], // Mark pivot index as 'locally' sorted
+       highlight: [finalPivotIndex], // Highlight the pivot in its final sorted place
+       sortedIndices: [...currentSorted], // Mark pivot index as 'locally' sorted
         pivot: finalPivotIndex, // Update pivot index highlight
-       message: `Pivot ${arr[finalPivotIndex]} is now at its final sorted position (index ${finalPivotIndex}) for this partition. Array: [${arr.join(', ')}].`,
+       message: `Pivot ${arr[finalPivotIndex]} is now at its final sorted position (index ${finalPivotIndex}). Array: [${arr.join(', ')}].`,
      });
    } else {
         steps.push({
        array: [...arr],
        highlight: [finalPivotIndex], // Highlight the pivot in its final sorted place
-       sortedIndices: [finalPivotIndex], // Mark pivot index as 'locally' sorted
+       sortedIndices: [...currentSorted], // Mark pivot index as 'locally' sorted
        pivot: finalPivotIndex, // Update pivot index highlight
-       message: `Pivot ${arr[finalPivotIndex]} (at index ${finalPivotIndex}) was already in its final sorted position for this partition. No final swap needed.`,
+       message: `Pivot ${arr[finalPivotIndex]} (at index ${finalPivotIndex}) was already in its final sorted position.`,
      });
    }
 
 
-  return finalPivotIndex; // Return the index of the pivot element
+  return { partitionIndex: finalPivotIndex, sortedIndices: currentSorted }; // Return the index and updated sorted indices
 }
 
 // Recursive Quick Sort function that generates steps
@@ -111,57 +107,58 @@ function quickSortRecursive(
   arr: number[],
   low: number,
   high: number,
-  steps: AlgorithmStep[]
-) {
+  steps: ArrayAlgorithmStep[],
+  currentSorted: number[] // Pass down and update sorted indices
+): number[] { // Return updated sorted indices
   if (low < high) {
     // pi is the partitioning index, arr[pi] is now at the right place
-    const pi = partition(arr, low, high, steps);
+    const { partitionIndex: pi, sortedIndices: updatedSortedAfterPartition } = partition(arr, low, high, steps, currentSorted);
+    currentSorted = updatedSortedAfterPartition; // Update sorted list
 
      // Add step indicating recursion
       steps.push({
         array: [...arr],
         highlight: [],
-        sortedIndices: [pi], // Carry over the locally sorted pivot index
+        sortedIndices: [...currentSorted], // Carry over the locally sorted pivot index
         pivot: undefined, // Clear pivot highlight for recursive calls
-        message: `Recursively sorting left subarray (indices ${low}-${pi - 1}) and right subarray (indices ${pi + 1}-${high}).`,
+        message: `Recursively sorting left subarray (${low}-${pi - 1}) and right subarray (${pi + 1}-${high}). Pivot ${arr[pi]} is sorted.`,
       });
 
 
     // Separately sort elements before partition and after partition
-    quickSortRecursive(arr, low, pi - 1, steps);
-    quickSortRecursive(arr, pi + 1, high, steps);
-  } else if (low === high) {
+    currentSorted = quickSortRecursive(arr, low, pi - 1, steps, currentSorted);
+    currentSorted = quickSortRecursive(arr, pi + 1, high, steps, currentSorted);
+  } else if (low === high && low >= 0 && low < arr.length) {
       // Base case: subarray of size 1 is already sorted
-      steps.push({
-          array: [...arr],
-          highlight: [low],
-          sortedIndices: [low],
-          pivot: undefined,
-          message: `Base case: Subarray at index ${low} (value ${arr[low]}) is of size 1, considered sorted.`
-      });
+       steps.push({
+           array: [...arr],
+           highlight: [low],
+           sortedIndices: [...currentSorted],
+           pivot: undefined,
+           message: `Base case: Subarray at index ${low} (value ${arr[low]}) is size 1, considered sorted.`
+       });
   }
+
+   return currentSorted; // Return potentially updated list
 }
 
 // Main function to get steps
-export function getQuickSortSteps(array: number[]): AlgorithmStep[] {
-  const steps: AlgorithmStep[] = [];
+export function getQuickSortSteps(array: number[]): ArrayAlgorithmStep[] {
+  const steps: ArrayAlgorithmStep[] = [];
   const n = array.length;
   let arr = [...array];
+  let sortedIndices: number[] = []; // Track indices known to be sorted
 
   steps.push({ array: [...arr], highlight: [], sortedIndices: [], message: "Initial array." });
 
-   if (n > 0) {
-       quickSortRecursive(arr, 0, n - 1, steps);
-        // Collect all indices that were marked as sorted during base cases or partitioning
-        const finalSortedIndices = Array.from({length: n}, (_, i) => i);
-        steps.push({
-            array: [...arr],
-            highlight: [],
-            sortedIndices: finalSortedIndices, // Mark all as sorted
-            message: "Array is sorted."
-        });
-   }
+   quickSortRecursive(arr, 0, n - 1, steps, sortedIndices);
 
+    steps.push({
+        array: [...arr],
+        highlight: [],
+        sortedIndices: Array.from({length: n}, (_, i) => i), // Mark all as sorted
+        message: "Array is sorted."
+    });
 
   return steps;
 }

@@ -1,9 +1,5 @@
-type AlgorithmStep = {
-  array: number[];
-  highlight: number[]; // [current index i, index being compared j, current min index]
-  sortedIndices: number[];
-  message: string;
-};
+import type { ArrayAlgorithmStep } from '@/lib/types'; // Updated import path
+
 
 export function selectionSort(array: number[]): number[] {
   const n = array.length;
@@ -21,8 +17,8 @@ export function selectionSort(array: number[]): number[] {
   return array;
 }
 
-export function getSelectionSortSteps(array: number[]): AlgorithmStep[] {
-  const steps: AlgorithmStep[] = [];
+export function getSelectionSortSteps(array: number[]): ArrayAlgorithmStep[] {
+  const steps: ArrayAlgorithmStep[] = [];
   const n = array.length;
   let arr = [...array];
   let sortedIndices: number[] = [];
@@ -36,7 +32,7 @@ export function getSelectionSortSteps(array: number[]): AlgorithmStep[] {
       array: [...arr],
       highlight: [i], // Highlight outer loop index i
       sortedIndices: [...sortedIndices],
-      message: `Finding the minimum element in the unsorted part (starting from index ${i}). Current minimum is ${arr[minIndex]} at index ${minIndex}.`,
+      message: `Finding the minimum element in the unsorted part (from index ${i}). Current minimum guess: ${arr[minIndex]} at index ${minIndex}.`,
     });
 
     for (let j = i + 1; j < n; j++) {
@@ -65,7 +61,7 @@ export function getSelectionSortSteps(array: number[]): AlgorithmStep[] {
         array: [...arr],
         highlight: [i, minIndex], // Highlight elements to be swapped
         sortedIndices: [...sortedIndices],
-        message: `Minimum found at index ${minIndex} (${arr[minIndex]}). Swapping with element at index ${i} (${arr[i]}).`,
+        message: `Minimum for pass ${i} found at index ${minIndex} (${arr[minIndex]}). Swapping with element at index ${i} (${arr[i]}).`,
       });
       [arr[i], arr[minIndex]] = [arr[minIndex], arr[i]]; // Swap
        steps.push({
@@ -79,7 +75,7 @@ export function getSelectionSortSteps(array: number[]): AlgorithmStep[] {
         array: [...arr],
         highlight: [i], // Highlight element at i
         sortedIndices: [...sortedIndices],
-        message: `Element at index ${i} (${arr[i]}) is already the minimum in the unsorted part. No swap needed.`,
+        message: `Element at index ${i} (${arr[i]}) is already the minimum for this pass. No swap needed.`,
       });
     }
 
@@ -93,14 +89,28 @@ export function getSelectionSortSteps(array: number[]): AlgorithmStep[] {
      });
   }
 
-  // Mark the last element as sorted
-  sortedIndices.push(n - 1);
-  steps.push({
-    array: [...arr],
-    highlight: [],
-    sortedIndices: [...sortedIndices],
-    message: "Array is sorted.",
-  });
+   // Mark the last element as sorted (it must be in the correct place after n-1 passes)
+    if (n > 0) {
+        sortedIndices.push(n - 1);
+        // Add final step only if the last one isn't already fully sorted
+        if (steps[steps.length - 1]?.sortedIndices?.length !== n) {
+            steps.push({
+                array: [...arr],
+                highlight: [],
+                sortedIndices: [...sortedIndices].sort((a,b)=>a-b), // Ensure final list is ordered
+                message: "Array is sorted.",
+            });
+        }
+    } else {
+         // Handle empty array case
+         steps.push({
+             array: [],
+             highlight: [],
+             sortedIndices: [],
+             message: "Array is empty, nothing to sort."
+         });
+    }
+
 
   return steps;
 }

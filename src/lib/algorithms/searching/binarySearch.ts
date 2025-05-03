@@ -1,10 +1,5 @@
-type AlgorithmStep = {
-  array: number[];
-  highlight: number[]; // [low, mid, high] indices
-  target: number;
-  foundIndex?: number; // Index where target is found
-  message: string;
-};
+import type { ArrayAlgorithmStep } from '@/lib/types'; // Updated import path
+
 
 // Binary search requires a sorted array
 export function binarySearch(sortedArray: number[], target: number): number {
@@ -28,8 +23,8 @@ export function binarySearch(sortedArray: number[], target: number): number {
 }
 
 
-export function getBinarySearchSteps(sortedArray: number[], target: number): AlgorithmStep[] {
-  const steps: AlgorithmStep[] = [];
+export function getBinarySearchSteps(sortedArray: number[], target: number): ArrayAlgorithmStep[] {
+  const steps: ArrayAlgorithmStep[] = [];
   const n = sortedArray.length;
   let low = 0;
   let high = n - 1;
@@ -49,7 +44,7 @@ export function getBinarySearchSteps(sortedArray: number[], target: number): Alg
     // Highlight low, mid, and high pointers
     steps.push({
       array: [...sortedArray],
-      highlight: [low, mid, high],
+      highlight: [low, mid, high].filter(idx => idx >=0 && idx < n), // Ensure indices are valid
       target: target,
       message: `Current range: [${low}, ${high}]. Calculating middle index: mid = floor((${low} + ${high}) / 2) = ${mid}. Value at mid: ${midValue}.`,
     });
@@ -75,7 +70,7 @@ export function getBinarySearchSteps(sortedArray: number[], target: number): Alg
     } else if (midValue < target) {
       steps.push({
         array: [...sortedArray],
-        highlight: [low, mid, high],
+        highlight: [low, mid, high].filter(idx => idx >=0 && idx < n),
         target: target,
         message: `${midValue} < ${target}. Target might be in the right half. Adjusting low pointer to mid + 1 (${mid + 1}).`,
       });
@@ -83,7 +78,7 @@ export function getBinarySearchSteps(sortedArray: number[], target: number): Alg
     } else {
        steps.push({
         array: [...sortedArray],
-        highlight: [low, mid, high],
+        highlight: [low, mid, high].filter(idx => idx >=0 && idx < n),
         target: target,
         message: `${midValue} > ${target}. Target might be in the left half. Adjusting high pointer to mid - 1 (${mid - 1}).`,
       });
@@ -94,7 +89,7 @@ export function getBinarySearchSteps(sortedArray: number[], target: number): Alg
      if (low <= high) {
         steps.push({
             array: [...sortedArray],
-            highlight: [low, high], // Highlight new search range
+            highlight: [low, high].filter(idx => idx >=0 && idx < n), // Highlight new search range
             target: target,
             message: `New search range is from index ${low} to ${high}.`,
         });

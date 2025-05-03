@@ -1,9 +1,4 @@
-type AlgorithmStep = {
-  array: number[];
-  highlight: number[];
-  sortedIndices: number[];
-  message: string;
-};
+import type { ArrayAlgorithmStep } from '@/lib/types'; // Updated import path
 
 export function bubbleSort(array: number[]): number[] {
   const n = array.length;
@@ -23,8 +18,8 @@ export function bubbleSort(array: number[]): number[] {
 }
 
 
-export function getBubbleSortSteps(array: number[]): AlgorithmStep[] {
-  const steps: AlgorithmStep[] = [];
+export function getBubbleSortSteps(array: number[]): ArrayAlgorithmStep[] {
+  const steps: ArrayAlgorithmStep[] = [];
   const n = array.length;
   let arr = [...array];
   let sortedIndices: number[] = [];
@@ -70,26 +65,41 @@ export function getBubbleSortSteps(array: number[]): AlgorithmStep[] {
       }
     }
     // Mark the last element of the pass as sorted
-    if (k > 0) {
-      sortedIndices.push(k - 1);
+    if (k > 0 && swapped) { // Only mark if a swap occurred in the pass, or it's the final pass implicitly making it sorted
+      sortedIndices.unshift(k - 1); // Add to the beginning as highest elements sort first
        steps.push({
            array: [...arr],
            highlight: [],
-           sortedIndices: [...sortedIndices],
+           sortedIndices: [...sortedIndices].sort((a,b)=>a-b), // Keep sortedIndices visually consistent
            message: `End of pass. ${arr[k-1]} is now in its sorted position.`,
        });
+    } else if (!swapped && k > 0) {
+        // If no swaps occurred, the rest is sorted
+        const remainingUnsorted = Array.from({length: k}, (_, idx) => idx);
+        sortedIndices = [...remainingUnsorted, ...sortedIndices].sort((a,b)=>a-b);
+         steps.push({
+           array: [...arr],
+           highlight: [],
+           sortedIndices: [...sortedIndices],
+           message: `No swaps in this pass. Remaining elements are sorted.`,
+       });
     }
+
+
     k--; // Reduce the range for the next pass
   } while (swapped);
 
   // Ensure all elements are marked as sorted at the end if not already
    const finalSortedIndices = Array.from({length: n}, (_, i) => i);
-    steps.push({
-        array: [...arr],
-        highlight: [],
-        sortedIndices: finalSortedIndices,
-        message: "Array is sorted.",
-    });
+    // Add final step only if the last one isn't already fully sorted
+    if (JSON.stringify(steps[steps.length - 1]?.sortedIndices?.sort((a,b)=>a-b)) !== JSON.stringify(finalSortedIndices)) {
+        steps.push({
+            array: [...arr],
+            highlight: [],
+            sortedIndices: finalSortedIndices,
+            message: "Array is sorted.",
+        });
+    }
 
 
   return steps;

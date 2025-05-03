@@ -1,9 +1,5 @@
-type AlgorithmStep = {
-  array: number[];
-  highlight: number[]; // [current element i, comparison element j]
-  sortedIndices: number[]; // Elements considered sorted (up to i-1)
-  message: string;
-};
+import type { ArrayAlgorithmStep } from '@/lib/types'; // Updated import path
+
 
 export function insertionSort(array: number[]): number[] {
   const n = array.length;
@@ -19,8 +15,8 @@ export function insertionSort(array: number[]): number[] {
   return array;
 }
 
-export function getInsertionSortSteps(array: number[]): AlgorithmStep[] {
-  const steps: AlgorithmStep[] = [];
+export function getInsertionSortSteps(array: number[]): ArrayAlgorithmStep[] {
+  const steps: ArrayAlgorithmStep[] = [];
   const n = array.length;
   let arr = [...array];
   let sortedIndices: number[] = [];
@@ -105,12 +101,16 @@ export function getInsertionSortSteps(array: number[]): AlgorithmStep[] {
 
    // Final step to ensure all indices are marked sorted if n > 0
    if (n > 0) {
-      steps.push({
-        array: [...arr],
-        highlight: [],
-        sortedIndices: Array.from({ length: n }, (_, k) => k),
-        message: "Array is sorted.",
-      });
+        const finalSortedIndices = Array.from({ length: n }, (_, k) => k);
+         // Add final step only if the last one isn't already fully sorted
+        if (JSON.stringify(steps[steps.length - 1]?.sortedIndices) !== JSON.stringify(finalSortedIndices)) {
+            steps.push({
+                array: [...arr],
+                highlight: [],
+                sortedIndices: finalSortedIndices,
+                message: "Array is sorted.",
+            });
+        }
    }
 
 

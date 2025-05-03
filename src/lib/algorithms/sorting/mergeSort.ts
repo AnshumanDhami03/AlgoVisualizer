@@ -1,9 +1,5 @@
-type AlgorithmStep = {
-  array: number[];
-  highlight: number[]; // Indices being merged or compared within a subarray
-  sortedIndices: number[]; // Represents the range being merged/sorted
-  message: string;
-};
+import type { ArrayAlgorithmStep } from '@/lib/types'; // Updated import path
+
 
 // Helper function for merging two sorted subarrays and generating steps
 function merge(
@@ -11,15 +7,15 @@ function merge(
   left: number,
   mid: number,
   right: number,
-  steps: AlgorithmStep[],
+  steps: ArrayAlgorithmStep[],
   originalArrRef: number[] // Reference to the full array for display
 ) {
-  const leftArr = arr.slice(left, mid + 1);
-  const rightArr = arr.slice(mid + 1, right + 1);
+  const leftArr = originalArrRef.slice(left, mid + 1); // Use original ref for slicing correct values
+  const rightArr = originalArrRef.slice(mid + 1, right + 1); // Use original ref
 
   let i = 0; // Index for leftArr
   let j = 0; // Index for rightArr
-  let k = left; // Index for merged arr
+  let k = left; // Index for merged arr (in originalArrRef)
 
   steps.push({
       array: [...originalArrRef], // Show full array state
@@ -45,8 +41,8 @@ function merge(
         sortedIndices: [],
         message: `${leftArr[i]} <= ${rightArr[j]}. Taking ${leftArr[i]} from left subarray.`,
       });
-      arr[k] = leftArr[i];
-      originalArrRef[k] = leftArr[i]; // Update the reference array
+      //arr[k] = leftArr[i]; // Modify the temporary array used by recursion if needed
+      originalArrRef[k] = leftArr[i]; // Update the reference array THAT IS VISUALIZED
       i++;
     } else {
        steps.push({
@@ -55,8 +51,8 @@ function merge(
         sortedIndices: [],
         message: `${leftArr[i]} > ${rightArr[j]}. Taking ${rightArr[j]} from right subarray.`,
       });
-      arr[k] = rightArr[j];
-       originalArrRef[k] = rightArr[j]; // Update the reference array
+      //arr[k] = rightArr[j];
+       originalArrRef[k] = rightArr[j]; // Update the reference array THAT IS VISUALIZED
       j++;
     }
      // Show the state after placing the element
@@ -64,7 +60,7 @@ function merge(
         array: [...originalArrRef],
         highlight: [k], // Highlight the position where element was placed
         sortedIndices: Array.from({ length: k - left + 1 }, (_, idx) => left + idx), // Tentatively mark merged part
-        message: `Placed ${arr[k]} at index ${k}. Merged part: [${originalArrRef.slice(left, k + 1).join(', ')}].`,
+        message: `Placed ${originalArrRef[k]} at index ${k}. Merged part: [${originalArrRef.slice(left, k + 1).join(', ')}].`,
       });
     k++;
   }
@@ -77,14 +73,14 @@ function merge(
         sortedIndices: [],
         message: `Copying remaining element ${leftArr[i]} from left subarray.`,
       });
-    arr[k] = leftArr[i];
+    //arr[k] = leftArr[i];
      originalArrRef[k] = leftArr[i];
       // Show the state after placing the element
       steps.push({
         array: [...originalArrRef],
         highlight: [k], // Highlight the position where element was placed
          sortedIndices: Array.from({ length: k - left + 1 }, (_, idx) => left + idx),
-        message: `Placed ${arr[k]} at index ${k}. Merged part: [${originalArrRef.slice(left, k + 1).join(', ')}].`,
+        message: `Placed ${originalArrRef[k]} at index ${k}. Merged part: [${originalArrRef.slice(left, k + 1).join(', ')}].`,
       });
     i++;
     k++;
@@ -98,14 +94,14 @@ function merge(
         sortedIndices: [],
         message: `Copying remaining element ${rightArr[j]} from right subarray.`,
       });
-    arr[k] = rightArr[j];
+    //arr[k] = rightArr[j];
      originalArrRef[k] = rightArr[j];
      // Show the state after placing the element
       steps.push({
         array: [...originalArrRef],
         highlight: [k], // Highlight the position where element was placed
          sortedIndices: Array.from({ length: k - left + 1 }, (_, idx) => left + idx),
-        message: `Placed ${arr[k]} at index ${k}. Merged part: [${originalArrRef.slice(left, k + 1).join(', ')}].`,
+        message: `Placed ${originalArrRef[k]} at index ${k}. Merged part: [${originalArrRef.slice(left, k + 1).join(', ')}].`,
       });
     j++;
     k++;
@@ -121,11 +117,11 @@ function merge(
 
 // Recursive merge sort function that generates steps
 function mergeSortRecursive(
-  arr: number[],
+  arr: number[], // This can be the original array reference now
   left: number,
   right: number,
-  steps: AlgorithmStep[],
-  originalArrRef: number[]
+  steps: ArrayAlgorithmStep[],
+  originalArrRef: number[] // Pass this down to merge
 ) {
   if (left >= right) {
     // Base case: subarray of size 0 or 1 is already sorted
@@ -151,22 +147,23 @@ function mergeSortRecursive(
 
   mergeSortRecursive(arr, left, mid, steps, originalArrRef);
   mergeSortRecursive(arr, mid + 1, right, steps, originalArrRef);
+  // Pass originalArrRef to merge for visualization updates
   merge(arr, left, mid, right, steps, originalArrRef);
 }
 
 // Main function to get steps
-export function getMergeSortSteps(array: number[]): AlgorithmStep[] {
-  const steps: AlgorithmStep[] = [];
+export function getMergeSortSteps(array: number[]): ArrayAlgorithmStep[] {
+  const steps: ArrayAlgorithmStep[] = [];
   const n = array.length;
-  let arr = [...array]; // Use this for recursive calls, but display originalArrRef
-  let originalArrRef = [...array]; // This array reflects the state shown to the user
+  let arr = [...array]; // Keep a mutable copy for visualization state updates
 
-  steps.push({ array: [...originalArrRef], highlight: [], sortedIndices: [], message: "Initial array." });
+  steps.push({ array: [...arr], highlight: [], sortedIndices: [], message: "Initial array." });
 
   if (n > 0) {
-      mergeSortRecursive(arr, 0, n - 1, steps, originalArrRef);
+      // Pass the mutable 'arr' to the recursive function, which will update it via the 'merge' helper
+      mergeSortRecursive(arr, 0, n - 1, steps, arr);
       steps.push({
-          array: [...originalArrRef],
+          array: [...arr], // Show final sorted state
           highlight: [],
           sortedIndices: Array.from({length: n}, (_, i) => i), // Mark all as sorted
           message: "Array is sorted."

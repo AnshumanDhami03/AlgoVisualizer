@@ -9,7 +9,7 @@ type AlgorithmPageProps = {
   };
 };
 
-// TODO: Replace with actual algorithm details fetching if needed
+// Define valid algorithms and their display names
 const VALID_ALGORITHMS: Record<string, Record<string, string>> = {
   sort: {
     'bubble-sort': 'Bubble Sort',
@@ -22,11 +22,26 @@ const VALID_ALGORITHMS: Record<string, Record<string, string>> = {
     'linear-search': 'Linear Search',
     'binary-search': 'Binary Search',
   },
+  graph: {
+    'prims-algorithm': "Prim's Algorithm",
+    'kruskals-algorithm': "Kruskal's Algorithm",
+  },
 };
+
+// Function to get algorithm name safely
+const getAlgorithmName = (category: string, algorithm: string): string | undefined => {
+  return VALID_ALGORITHMS[category]?.[algorithm];
+};
+
+// Function to check if an algorithm is valid
+const isValidAlgorithm = (category: string, algorithm: string): boolean => {
+   return !!getAlgorithmName(category, algorithm);
+};
+
 
 export async function generateMetadata({ params }: AlgorithmPageProps): Promise<Metadata> {
   const { category, algorithm } = params;
-  const algorithmName = VALID_ALGORITHMS[category]?.[algorithm];
+  const algorithmName = getAlgorithmName(category, algorithm);
 
   if (!algorithmName) {
     return {
@@ -34,8 +49,10 @@ export async function generateMetadata({ params }: AlgorithmPageProps): Promise<
     };
   }
 
+  const capitalizedCategory = category.charAt(0).toUpperCase() + category.slice(1);
+
   return {
-    title: `${algorithmName} | AlgoVisualizer`,
+    title: `${algorithmName} | ${capitalizedCategory} | AlgoVisualizer`,
     description: `Visualize the ${algorithmName} algorithm step by step.`,
   };
 }
@@ -44,11 +61,11 @@ export default function AlgorithmPage({ params }: AlgorithmPageProps) {
   const { category, algorithm } = params;
 
   // Validate category and algorithm
-  if (!['sort', 'search'].includes(category) || !VALID_ALGORITHMS[category]?.[algorithm]) {
+  if (!isValidAlgorithm(category, algorithm)) {
     notFound(); // Show 404 if the category or algorithm is invalid
   }
 
-  const algorithmName = VALID_ALGORITHMS[category][algorithm];
+  const algorithmName = getAlgorithmName(category, algorithm)!; // We know it's valid here
 
   return (
     <div className="space-y-6">
@@ -58,7 +75,7 @@ export default function AlgorithmPage({ params }: AlgorithmPageProps) {
   );
 }
 
-// Optional: Generate static paths if you know all algorithms beforehand
+// Generate static paths for all valid algorithms
 export async function generateStaticParams() {
   const paths = [];
   for (const category in VALID_ALGORITHMS) {
