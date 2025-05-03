@@ -28,8 +28,8 @@ interface GraphEditorProps {
     readOnly?: boolean; // Make canvas non-interactive if true
 }
 
-const NODE_RADIUS = 22; // Match visualizer's increased radius
-const EDGE_HIT_WIDTH = 8; // Wider area for clicking edges
+const NODE_RADIUS = 22;
+const EDGE_HIT_WIDTH = 8;
 
 const GraphEditor: React.FC<GraphEditorProps> = ({
     graph,
@@ -41,7 +41,7 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [nodes, setNodes] = useState<Node[]>(graph.nodes);
     const [edges, setEdges] = useState<Edge[]>(graph.edges);
-    const [draggingNode, setDraggingNode] = useState<number | null>(null);
+    const [draggingNodeId, setDraggingNodeId] = useState<number | null>(null);
     const [drawingEdge, setDrawingEdge] = useState<{ source: number; x: number; y: number } | null>(null);
     const [editingEdge, setEditingEdge] = useState<Edge | null>(null);
     const [newEdgeWeight, setNewEdgeWeight] = useState<string>('1');
@@ -50,22 +50,21 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
     const [nextNodeId, setNextNodeId] = useState(0);
     const { toast } = useToast();
 
-    // Update internal state when graph prop changes
+    // Update internal state ONLY when the graph prop *identity* changes
+    // This prevents overwriting local state during interactions if parent re-renders
     useEffect(() => {
         setNodes(graph.nodes);
         setEdges(graph.edges);
-        // Ensure nextNodeId is higher than any existing node ID
         const maxId = graph.nodes.reduce((max, node) => Math.max(max, node.id), -1);
         setNextNodeId(maxId + 1);
-    }, [graph]);
+    }, [graph]); // Depend only on the graph object itself
+
 
     // Function to call onGraphChange when internal state changes
-    const triggerGraphChange = useCallback(() => {
-        // Create clean copies without circular references if any state holds references
-        const cleanNodes = nodes.map(n => ({ ...n }));
-        const cleanEdges = edges.map(e => ({ ...e }));
-        onGraphChange({ nodes: cleanNodes, edges: cleanEdges });
-    }, [nodes, edges, onGraphChange]);
+    // This is crucial for syncing the editor state back to the parent
+    const triggerGraphChange = useCallback((updatedNodes: Node[], updatedEdges: Edge[]) => {
+        onGraphChange({ nodes: updatedNodes, edges: updatedEdges });
+    }, [onGraphChange]);
 
 
     // Draw function
@@ -75,7 +74,6 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // Get computed styles for theme colors (needed for drawing)
         const computedStyle = getComputedStyle(document.documentElement);
         const primaryColor = computedStyle.getPropertyValue('--primary').trim();
         const primaryFgColor = computedStyle.getPropertyValue('--primary-foreground').trim();
@@ -85,10 +83,9 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
         const backgroundColor = computedStyle.getPropertyValue('--background').trim();
         const foregroundColor = computedStyle.getPropertyValue('--foreground').trim();
 
-
         ctx.clearRect(0, 0, width, height);
 
-        // Draw edges first
+        // Draw edges
         edges.forEach(edge => {
             const sourceNode = nodes.find(n => n.id === edge.source);
             const targetNode = nodes.find(n => n.id === edge.target);
@@ -98,32 +95,27 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
             ctx.moveTo(sourceNode.x, sourceNode.y);
             ctx.lineTo(targetNode.x, targetNode.y);
             ctx.lineWidth = 2;
-            // Use accent color if editing, otherwise muted-foreground with alpha
             ctx.strokeStyle = editingEdge?.id === edge.id ? `hsl(${accentColor})` : `hsla(${mutedFgColor}, 0.5)`;
-            ctx.globalAlpha = editingEdge?.id === edge.id ? 1.0 : 0.5; // Make non-editing edges faded
+            ctx.globalAlpha = editingEdge?.id === edge.id ? 1.0 : 0.5;
             ctx.stroke();
-            ctx.globalAlpha = 1.0; // Reset alpha
+            ctx.globalAlpha = 1.0;
 
-
-            // Draw edge weight (similar to visualizer)
+            // Draw edge weight
             const midX = (sourceNode.x + targetNode.x) / 2;
             const midY = (sourceNode.y + targetNode.y) / 2;
-            ctx.font = 'bold 12px Arial'; // Match visualizer weight font size
+            ctx.font = 'bold 12px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
              const angle = Math.atan2(targetNode.y - sourceNode.y, targetNode.x - sourceNode.x);
-            const offsetX = Math.sin(angle) * 15; // Match visualizer offset
+            const offsetX = Math.sin(angle) * 15;
             const offsetY = -Math.cos(angle) * 15;
              const text = edge.weight.toString();
              const textWidth = ctx.measureText(text).width;
 
-            // Small background for readability
             ctx.fillStyle = `hsl(${backgroundColor})`;
-            ctx.globalAlpha = 0.9; // Match visualizer alpha
-            ctx.fillRect(midX + offsetX - textWidth / 2 - 4, midY + offsetY - 10, textWidth + 8, 14); // Match visualizer size
-
-            // Text itself - use edge stroke color for consistency
-            ctx.fillStyle = ctx.strokeStyle; // Use the same color as the line
+            ctx.globalAlpha = 0.9;
+            ctx.fillRect(midX + offsetX - textWidth / 2 - 4, midY + offsetY - 10, textWidth + 8, 14);
+            ctx.fillStyle = ctx.strokeStyle;
             ctx.globalAlpha = 1.0;
             ctx.fillText(text, midX + offsetX, midY + offsetY);
         });
@@ -136,7 +128,7 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
                 ctx.moveTo(sourceNode.x, sourceNode.y);
                 ctx.lineTo(drawingEdge.x, drawingEdge.y);
                 ctx.lineWidth = 2;
-                ctx.strokeStyle = `hsl(${primaryColor})`; // Use primary color for drawing line
+                ctx.strokeStyle = `hsl(${primaryColor})`;
                 ctx.globalAlpha = 0.7;
                 ctx.setLineDash([5, 5]);
                 ctx.stroke();
@@ -149,32 +141,25 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
         nodes.forEach(node => {
             ctx.beginPath();
             ctx.arc(node.x, node.y, NODE_RADIUS, 0, Math.PI * 2);
-
-            // Fill Style - Use primary when dragging/drawing from, else muted
-            ctx.fillStyle = draggingNode === node.id || drawingEdge?.source === node.id ? `hsl(${primaryColor})` : `hsl(${mutedColor})`;
+            ctx.fillStyle = draggingNodeId === node.id || drawingEdge?.source === node.id ? `hsl(${primaryColor})` : `hsl(${mutedColor})`;
              ctx.fill();
-
-            // Stroke Style - Use corresponding foreground for contrast
-             ctx.strokeStyle = draggingNode === node.id || drawingEdge?.source === node.id ? `hsl(${primaryFgColor})` : `hsl(${mutedFgColor})`;
+             ctx.strokeStyle = draggingNodeId === node.id || drawingEdge?.source === node.id ? `hsl(${primaryFgColor})` : `hsl(${mutedFgColor})`;
             ctx.lineWidth = 1.5;
             ctx.stroke();
-
-
-            // Draw node ID - Use stroke color for contrast
-            ctx.fillStyle = ctx.strokeStyle; // Use stroke color for text inside node
-            ctx.font = 'bold 15px Arial'; // Match visualizer node ID font size
+            ctx.fillStyle = ctx.strokeStyle;
+            ctx.font = 'bold 15px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(node.id.toString(), node.x, node.y);
         });
-    }, [nodes, edges, draggingNode, drawingEdge, width, height, editingEdge]);
+    // Depend on internal state variables that affect drawing
+    }, [nodes, edges, draggingNodeId, drawingEdge, width, height, editingEdge]);
 
-    // Effect to draw canvas when state changes
+    // Effect to redraw canvas when relevant state changes
     useEffect(() => {
         draw();
-    }, [draw]); // Redraw whenever draw function updates (due to state changes)
+    }, [draw]); // Trigger redraw whenever the draw function itself updates
 
-     // Get mouse position relative to canvas
      const getMousePos = (event: React.MouseEvent<HTMLCanvasElement>): { x: number; y: number } => {
         const canvas = canvasRef.current;
         if (!canvas) return { x: 0, y: 0 };
@@ -185,9 +170,10 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
         };
     };
 
-     // Find node at a given position
      const getNodeAtPos = (x: number, y: number): Node | null => {
-        for (const node of nodes) {
+        // Iterate in reverse so top-most node is found first if overlapping
+        for (let i = nodes.length - 1; i >= 0; i--) {
+            const node = nodes[i];
             const dx = x - node.x;
             const dy = y - node.y;
             if (dx * dx + dy * dy <= NODE_RADIUS * NODE_RADIUS) {
@@ -197,31 +183,20 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
         return null;
     };
 
-     // Find edge at a given position (line-point distance check)
     const getEdgeAtPos = (x: number, y: number): Edge | null => {
         for (const edge of edges) {
             const sourceNode = nodes.find(n => n.id === edge.source);
             const targetNode = nodes.find(n => n.id === edge.target);
             if (!sourceNode || !targetNode) continue;
-
             const x1 = sourceNode.x, y1 = sourceNode.y;
             const x2 = targetNode.x, y2 = targetNode.y;
-
-            // Check if point (x,y) is close to the line segment (x1,y1)-(x2,y2)
             const lenSq = (x2 - x1) ** 2 + (y2 - y1) ** 2;
-             if (lenSq === 0) continue; // Avoid division by zero for overlapping nodes
-
-             // Project point (x,y) onto the line defined by the edge
+             if (lenSq === 0) continue;
             let t = ((x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)) / lenSq;
-            t = Math.max(0, Math.min(1, t)); // Clamp t to the segment [0, 1]
-
-             // Find the closest point on the segment to (x,y)
+            t = Math.max(0, Math.min(1, t));
             const closestX = x1 + t * (x2 - x1);
             const closestY = y1 + t * (y2 - y1);
-
-             // Calculate distance from (x,y) to the closest point on the segment
             const distSq = (x - closestX) ** 2 + (y - closestY) ** 2;
-
              if (distSq <= EDGE_HIT_WIDTH ** 2) {
                 return edge;
             }
@@ -229,113 +204,105 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
         return null;
     };
 
-
-    // Mouse Down Handler
     const handleMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
         if (readOnly) return;
         const { x, y } = getMousePos(event);
         const clickedNode = getNodeAtPos(x, y);
 
         if (clickedNode) {
-            if (event.shiftKey) { // Start drawing edge if Shift is held
+            if (event.shiftKey) {
                 setDrawingEdge({ source: clickedNode.id, x, y });
-                setDraggingNode(null); // Don't drag while drawing edge
+                setDraggingNodeId(null);
                  setEditingEdge(null);
-            } else { // Start dragging node
-                setDraggingNode(clickedNode.id);
+            } else {
+                setDraggingNodeId(clickedNode.id);
                 setDrawingEdge(null);
                  setEditingEdge(null);
             }
         } else {
              const clickedEdge = getEdgeAtPos(x, y);
              if (clickedEdge) {
-                 setEditingEdge(clickedEdge); // Select edge for potential editing/deletion
-                 setDraggingNode(null);
+                 setEditingEdge(clickedEdge);
+                 setDraggingNodeId(null);
                  setDrawingEdge(null);
              } else {
-                 // Clicked on empty space: Add a new node if within bounds
                  if (x > NODE_RADIUS && x < width - NODE_RADIUS && y > NODE_RADIUS && y < height - NODE_RADIUS) {
                      const newNode: Node = { id: nextNodeId, x, y };
-                     setNodes(prevNodes => [...prevNodes, newNode]);
+                     const updatedNodes = [...nodes, newNode];
+                     setNodes(updatedNodes);
                      setNextNodeId(prevId => prevId + 1);
-                     triggerGraphChange(); // Update parent immediately after adding node
+                     triggerGraphChange(updatedNodes, edges); // Propagate change immediately
                  }
-                 setDraggingNode(null);
+                 setDraggingNodeId(null);
                  setDrawingEdge(null);
                  setEditingEdge(null);
              }
-
         }
     };
 
-    // Mouse Move Handler
     const handleMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
         if (readOnly) return;
         const { x, y } = getMousePos(event);
 
-        if (draggingNode !== null) {
-            // Keep node within canvas bounds
+        if (draggingNodeId !== null) {
             const boundedX = Math.max(NODE_RADIUS, Math.min(width - NODE_RADIUS, x));
             const boundedY = Math.max(NODE_RADIUS, Math.min(height - NODE_RADIUS, y));
-            setNodes(prevNodes =>
-                prevNodes.map(node =>
-                    node.id === draggingNode ? { ...node, x: boundedX, y: boundedY } : node
-                )
+            // Update internal state directly
+            const updatedNodes = nodes.map(node =>
+                node.id === draggingNodeId ? { ...node, x: boundedX, y: boundedY } : node
             );
-             // Debounce or throttle triggerGraphChange if performance is an issue
-             triggerGraphChange();
+            setNodes(updatedNodes);
+            // Trigger change frequently during drag for smoother visual updates if parent uses it
+            triggerGraphChange(updatedNodes, edges);
         } else if (drawingEdge) {
             setDrawingEdge({ ...drawingEdge, x, y });
         }
     };
 
-    // Mouse Up Handler
     const handleMouseUp = (event: React.MouseEvent<HTMLCanvasElement>) => {
         if (readOnly) return;
         const { x, y } = getMousePos(event);
 
+        // If drawing an edge, check target node
         if (drawingEdge) {
             const targetNode = getNodeAtPos(x, y);
             if (targetNode && targetNode.id !== drawingEdge.source) {
-                // Check if edge already exists (in either direction)
+                const sourceId = drawingEdge.source;
+                const targetId = targetNode.id;
+                // Check if edge already exists (undirected)
                 const edgeExists = edges.some(edge =>
-                    (edge.source === drawingEdge.source && edge.target === targetNode.id) ||
-                    (edge.source === targetNode.id && edge.target === drawingEdge.source)
+                    (edge.source === sourceId && edge.target === targetId) ||
+                    (edge.source === targetId && edge.target === sourceId)
                 );
 
                 if (!edgeExists) {
-                    // Set pending edge and open weight modal
-                    setPendingEdge({ source: drawingEdge.source, target: targetNode.id });
-                    setNewEdgeWeight('1'); // Reset weight input
+                    setPendingEdge({ source: sourceId, target: targetId });
+                    setNewEdgeWeight('1');
                     setIsWeightModalOpen(true);
                 } else {
-                     toast({ title: "Edge Exists", description: "An edge between these nodes already exists.", variant: "destructive" });
+                     toast({ title: "Edge Exists", description: `Edge between node ${sourceId} and ${targetId} already exists.`, variant: "destructive" });
                 }
-            } else if (!targetNode) {
-                 // Don't show error if mouse up on empty space, just cancel drawing
+            } else if (targetNode && targetNode.id === drawingEdge.source) {
+                toast({ title: "Invalid Edge", description: "Cannot create an edge connecting a node to itself.", variant: "destructive" });
             }
-             else {
-                 // Target node is the same as source node
-                 toast({ title: "Invalid Edge Target", description: "Cannot create an edge from a node to itself.", variant: "destructive" });
-            }
+            setDrawingEdge(null); // Stop drawing regardless of outcome
         }
 
-        // Stop dragging or drawing
-        setDraggingNode(null);
-        setDrawingEdge(null);
+        // If dragging a node, finalize position
+        if (draggingNodeId !== null) {
+            // Final position already set in mouseMove, just clear dragging state
+            setDraggingNodeId(null);
+             // Trigger one last time to ensure final position is saved if not triggered enough during move
+            triggerGraphChange(nodes, edges);
+        }
+
+
         // Deselect edge if clicking empty space on mouse up
         if (!getNodeAtPos(x,y) && !getEdgeAtPos(x,y)){
             setEditingEdge(null);
         }
-
-
-        // Trigger change if nodes were moved (even if not dragging now)
-        if (draggingNode !== null) {
-             triggerGraphChange();
-         }
     };
 
-     // Handle Weight Confirmation
     const handleConfirmWeight = () => {
         if (!pendingEdge) return;
         const weight = parseInt(newEdgeWeight, 10);
@@ -345,36 +312,38 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
         }
 
         const newEdge: Edge = {
-            // Use a more robust ID generation if needed, ensure uniqueness
-            id: `edge-${pendingEdge.source}-${pendingEdge.target}-${Date.now()}`, // Use "edge-" prefix
+            id: `edge-${pendingEdge.source}-${pendingEdge.target}-${Date.now() % 10000}`,
             source: pendingEdge.source,
             target: pendingEdge.target,
             weight: weight,
         };
 
-        setEdges(prevEdges => [...prevEdges, newEdge]);
+        const updatedEdges = [...edges, newEdge];
+        setEdges(updatedEdges);
         setIsWeightModalOpen(false);
         setPendingEdge(null);
-        triggerGraphChange(); // Update parent after adding edge
+        triggerGraphChange(nodes, updatedEdges); // Propagate change
     };
 
-     // Delete Node Function (example using context menu or button click)
-     // TODO: Add a button or context menu to trigger this
      const deleteNode = (nodeId: number) => {
          if (readOnly) return;
-         setNodes(prevNodes => prevNodes.filter(node => node.id !== nodeId));
-         // Also remove edges connected to this node
-         setEdges(prevEdges => prevEdges.filter(edge => edge.source !== nodeId && edge.target !== nodeId));
-          setEditingEdge(null); // Deselect edge if its node is deleted
-         triggerGraphChange();
+         const updatedNodes = nodes.filter(node => node.id !== nodeId);
+         const updatedEdges = edges.filter(edge => edge.source !== nodeId && edge.target !== nodeId);
+         setNodes(updatedNodes);
+         setEdges(updatedEdges);
+          if (editingEdge?.source === nodeId || editingEdge?.target === nodeId) {
+             setEditingEdge(null);
+         }
+         triggerGraphChange(updatedNodes, updatedEdges);
      };
 
       // Delete Edge Function
      const deleteEdge = (edgeId: string) => {
          if (readOnly) return;
-         setEdges(prevEdges => prevEdges.filter(edge => edge.id !== edgeId));
+         const updatedEdges = edges.filter(edge => edge.id !== edgeId);
+         setEdges(updatedEdges);
          setEditingEdge(null); // Deselect edge after deleting
-         triggerGraphChange();
+         triggerGraphChange(nodes, updatedEdges); // Propagate change
      };
 
       // Update Edge Weight Function
@@ -386,33 +355,36 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
              return;
          }
 
-         setEdges(prevEdges => prevEdges.map(edge =>
-              // Update weight and potentially the ID if it includes weight
-             edge.id === editingEdge.id ? { ...edge, weight: weight, id: `edge-${edge.source}-${edge.target}-${weight}` } : edge // Keep "edge-" prefix
-         ));
+        // Update the weight and ID of the specific edge
+         const updatedEdges = edges.map(edge =>
+             edge.id === editingEdge.id
+              // Generate a new ID based on potentially new weight to avoid issues if ID depends on weight
+              ? { ...edge, weight: weight, id: `edge-${edge.source}-${edge.target}-${weight}-${Date.now() % 10000}` }
+              : edge
+         );
+
+         setEdges(updatedEdges);
          setIsWeightModalOpen(false);
          setEditingEdge(null); // Deselect after edit
-         triggerGraphChange();
+         triggerGraphChange(nodes, updatedEdges); // Propagate change
      };
 
-     // Open weight modal for editing existing edge
      const openEditWeightModal = (edge: Edge) => {
          if (readOnly) return;
          setEditingEdge(edge);
          setNewEdgeWeight(edge.weight.toString());
          setIsWeightModalOpen(true);
-         setPendingEdge(null); // Ensure we are editing, not creating
+         setPendingEdge(null);
      };
 
 
     return (
         <div className="relative w-full h-full border rounded-md overflow-hidden bg-background">
-             {/* Instruction overlay */}
             {!readOnly && (
                 <div className={cn(
                     "absolute top-2 left-2 z-20 p-1.5 bg-background/80 border border-border rounded text-xs text-muted-foreground max-w-[200px]",
                     "transition-opacity duration-300",
-                     (drawingEdge || draggingNode || isWeightModalOpen || editingEdge) ? "opacity-0 pointer-events-none" : "opacity-100" // Hide instructions during actions
+                     (drawingEdge || draggingNodeId || isWeightModalOpen || editingEdge) ? "opacity-0 pointer-events-none" : "opacity-100"
                      )}>
                     Click: Add Node | Shift+Drag: Add Edge | Drag: Move | Click Edge: Edit/Delete
                  </div>
@@ -424,22 +396,25 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
-                onMouseLeave={() => { // Stop actions if mouse leaves canvas
-                    if (draggingNode !== null) triggerGraphChange(); // Ensure position updates if dragging stops outside
-                    setDraggingNode(null);
-                    setDrawingEdge(null);
+                onMouseLeave={() => {
+                    if (draggingNodeId !== null) {
+                         // Finalize drag state if mouse leaves while dragging
+                         triggerGraphChange(nodes, edges);
+                         setDraggingNodeId(null);
+                    }
+                     if (drawingEdge !== null){
+                         setDrawingEdge(null); // Cancel drawing edge
+                     }
                 }}
                 className={cn(
-                    "cursor-crosshair block", // Ensure block display to prevent extra space
+                    "cursor-crosshair block",
                     readOnly && "cursor-not-allowed",
-                    draggingNode !== null && "cursor-grabbing",
-                    drawingEdge !== null && "cursor-grabbing" // Also grabbing when drawing edge
+                    draggingNodeId !== null && "cursor-grabbing",
+                    drawingEdge !== null && "cursor-grabbing"
                 )}
             />
 
-
-             {/* Buttons for selected edge */}
-            {editingEdge && !readOnly && (
+             {editingEdge && !readOnly && (
                 <div className="absolute top-2 right-2 z-20 flex space-x-1 p-1 bg-background/80 rounded border">
                     <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => openEditWeightModal(editingEdge)} aria-label="Edit Edge Weight">
                         <Pencil className="h-4 w-4" />
@@ -450,12 +425,10 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
                  </div>
              )}
 
-
-            {/* Weight Input Modal */}
             <Dialog open={isWeightModalOpen} onOpenChange={(open) => {
                 setIsWeightModalOpen(open);
                  if (!open) {
-                     setEditingEdge(null); // Deselect edge when modal closes
+                     setEditingEdge(null);
                      setPendingEdge(null);
                  }
                 }}>
@@ -485,7 +458,7 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
                                 autoFocus
                                 onKeyDown={(e) => {
                                      if (e.key === 'Enter') {
-                                         e.preventDefault(); // Prevent form submission if any
+                                         e.preventDefault();
                                          if (editingEdge) handleUpdateWeight(); else handleConfirmWeight();
                                      } else if (e.key === 'Escape'){
                                          setIsWeightModalOpen(false);
@@ -511,4 +484,3 @@ const GraphEditor: React.FC<GraphEditorProps> = ({
 };
 
 export default GraphEditor;
-
