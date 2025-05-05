@@ -480,6 +480,23 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
 
   }, [category, array, editorGraph, visualizerGraph, isUsingEditorGraph, startNode, algorithmId, drawArray, drawGraphVisualization]);
 
+  // --- Input Handling Logic moved above its usage in handleSetStartNodeFromEditor ---
+  const handleSetStartNodeFromEditor = useCallback((nodeId: number) => {
+    if (algorithmId !== 'prims-algorithm') {
+        toast({ title: "Action Unavailable", description: "Setting a source node directly is only needed for Prim's algorithm.", variant: "default" });
+        return;
+    }
+    if (editorGraph.nodes.some(n => n.id === nodeId)) {
+        setStartNode(nodeId);
+         setIsUsingEditorGraph(true); // Assume user wants to visualize the editor graph now
+        resetVisualization(editorGraph); // Now safe to call resetVisualization
+        toast({ title: "Start Node Set", description: `Node ${nodeId} selected as the start node for Prim's algorithm on the workspace graph.` });
+        setEditorMode('node');
+    } else {
+        toast({ title: "Invalid Node", description: `Node ${nodeId} does not exist in the workspace graph.`, variant: "destructive" });
+    }
+ }, [algorithmId, editorGraph, toast, resetVisualization]); // Add resetVisualization to dependency array
+
 
   // --- Initialization and Reset ---
 
@@ -639,6 +656,13 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
        if (algorithmId !== 'prims-algorithm') return;
 
        const activeGraph = isUsingEditorGraph ? editorGraph : visualizerGraph;
+       // Handle "no-nodes" selection explicitly
+       if (value === "no-nodes" || value === "") {
+          setStartNode(null);
+          resetVisualization(activeGraph);
+          return;
+       }
+
        const nodeId = parseInt(value, 10);
        if (!isNaN(nodeId) && activeGraph.nodes.some(n => n.id === nodeId)) {
            setStartNode(nodeId);
@@ -651,28 +675,12 @@ export default function AlgorithmVisualizer({ algorithmId, category }: Algorithm
            setStartNode(newStartNode); // Fallback to first or null
            resetVisualization(activeGraph);
            if (value !== "no-nodes") { // Avoid toast if selection was disabled item
-             toast({title: "Invalid Selection", description:"Selected start node doesn't exist in the current graph.", variant: "destructive"})
+             toast({title: "Invalid Selection", description:"Selected start node doesn't exist in the current graph. Resetting.", variant: "destructive"})
            }
        }
    };
 
 
-    const handleSetStartNodeFromEditor = useCallback((nodeId: number) => {
-       if (algorithmId !== 'prims-algorithm') {
-           toast({ title: "Action Unavailable", description: "Setting a source node directly is only needed for Prim's algorithm.", variant: "default" });
-           return;
-       }
-       if (editorGraph.nodes.some(n => n.id === nodeId)) {
-           setStartNode(nodeId);
-            setIsUsingEditorGraph(true); // Assume user wants to visualize the editor graph now
-           resetVisualization(editorGraph);
-           toast({ title: "Start Node Set", description: `Node ${nodeId} selected as the start node for Prim's algorithm on the workspace graph.` });
-           setEditorMode('node');
-       } else {
-           toast({ title: "Invalid Node", description: `Node ${nodeId} does not exist in the workspace graph.`, variant: "destructive" });
-       }
-   // eslint-disable-next-line react-hooks/exhaustive-deps
-   }, [algorithmId, editorGraph, resetVisualization, toast]);
 
 
     const handleEditorModeChange = (value: GraphEditorMode | null) => {
